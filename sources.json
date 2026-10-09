@@ -1,0 +1,59 @@
+{
+  "sites": [
+    { "source": "Keskkonnaagentuur", "sitemap": "https://keskkonnaagentuur.ee/sitemap.xml" },
+    { "source": "Keskkonnaamet", "sitemap": "https://keskkonnaamet.ee/sitemap.xml" }
+  ],
+  "skip": [
+    "^https://[^/]+/(ru|en)(/|$)",
+    "/taxonomy/",
+    "/lehte-ei-leitud",
+    "/otsing",
+    "/kupsised",
+    "/kontaktid$",
+    "/privaatsus$",
+    "/juurdepaasetavus$"
+  ],
+  "focus": {
+    "label": "metsandus ja ulukid",
+    "always": ["SMI", "Ulukiseire"],
+    "keywords": [
+      "mets", "raie", "raiu", "lageraie", "uuendusraie", "harvendusraie", "sanitaarraie", "hooldusraie",
+      "valgustusraie", "turberaie", "puistu", "tihumeet", "harvendus", "kooreürask", "smi", "okaspuu",
+      "lehtpuu", "vääriselupai", "puidu", "puit",
+
+      "uluk", "jahi", "jaht", "linnujaht", "kütti", "küti", "kiskja", "suurkiskja", "sõrali", "seakatk",
+      "hunt", "hund", "karu", "pruunkaru", "ilves", "põder", "põdra", "põtr", "hirv", "punahirv",
+      "kobras", "kopra", "šaakal", "kährik", "rebane", "rebas", "jänes", "mäger", "mägra", "nugis",
+      "hüljes", "hülge", "hallhül"
+    ],
+    "exclude": ["karuput", "jahtu", "kütis", "metsmaasik", "metspipar"]
+  },
+  "pages": [
+    { "source": "SMI", "url": "https://keskkonnaportaal.ee/et/teemad/mets/metsastatistika-sh-smi" },
+    { "source": "Ulukiseire", "url": "https://keskkonnaportaal.ee/et/teemad/elusloodus/ulukid" },
+    { "source": "Ulukiseire", "url": "https://keskkonnaportaal.ee/et/ulukite-arvukus-ja-kuttimine" }
+  ],
+  "files": [
+    { "source": "SMI", "title": "SMI 2025 tulemused", "url": "https://keskkonnaportaal.ee/sites/default/files/Teemad/Mets/SMI%20tulemused%202025/SMI%202025%20tulemused.xlsx" },
+    { "source": "SMI", "title": "SMI 2025 ettekanne", "url": "https://keskkonnaportaal.ee/sites/default/files/Teemad/Mets/SMI%20tulemused%202025/SMI%202025%20ettekanne.pdf" },
+    { "source": "SMI", "title": "SMI 2024 tulemused", "url": "https://keskkonnaportaal.ee/sites/default/files/Teemad/Mets/SMI2024/SMI_2024.xlsx" },
+    { "source": "SMI", "title": "SMI 2024 ettekanne", "url": "https://keskkonnaportaal.ee/sites/default/files/Teemad/Mets/SMI2024/SMI%202024%20ettekanne.pdf" },
+    { "source": "SMI", "title": "SMI 2023 tulemused", "url": "https://keskkonnaportaal.ee/sites/default/files/Teemad/Mets/SMI%20tulemused%202023/SMI2023_tulemused_graafikud.xlsx" },
+    { "source": "SMI", "title": "SMI 2023 ettekanne", "url": "https://keskkonnaportaal.ee/sites/default/files/Teemad/Mets/SMI%20tulemused%202023/SMI2023_ettekanne.pdf" },
+    { "source": "SMI", "title": "SMI välitööde juhend 2023", "url": "https://keskkonnaportaal.ee/sites/default/files/Teemad/Mets/SMI_valitoode_juhend_2023.pdf" },
+    { "source": "SMI", "title": "Aastaraamat Mets 2023", "url": "https://keskkonnaportaal.ee/sites/default/files/Teemad/Mets/Mets%202023.pdf" },
+
+    { "source": "Ulukiseire", "title": "Ulukiasurkondade seisund ja küttimissoovitus 2026", "url": "https://keskkonnaportaal.ee/sites/default/files/SEIREARUANNE_2026.pdf" },
+    { "source": "Ulukiseire", "title": "Jahiulukite küttimine Eestis 2025/2026 jahihooajal", "url": "https://keskkonnaportaal.ee/sites/default/files/Jahiulukite%20k%C3%BCttimine%20Eestis%202025_2026%20jahihooajal.xlsx" },
+    { "source": "Ulukiseire", "title": "Jahiulukite küttimine Eestis 2024/2025 jahihooajal", "url": "https://keskkonnaportaal.ee/sites/default/files/Jahiulukite%20k%C3%BCttimine%20Eestis%202024_2025%20jahihooajal.xlsx" },
+    { "source": "Ulukiseire", "title": "Ulukite küttimine maakonniti 2011–2025 jahihooajal", "url": "https://keskkonnaportaal.ee/sites/default/files/ulukite_kuttimine_maakonniti_2011-2025_jahihooajal.csv" },
+    { "source": "Ulukiseire", "title": "Ulukite tekitatud metsakahjustused (kuni juuni 2026)", "url": "https://keskkonnaportaal.ee/sites/default/files/Ulukikahjud%20%202022-2026.%20juuni_FIN.xlsx" },
+    { "source": "Ulukiseire", "title": "Ettepanek hundi küttimise korraldamiseks 2025. jahihooajal (I osa)", "url": "https://keskkonnaportaal.ee/sites/default/files/Hunt%20k%C3%BCttimisettepanek_KAUR_2025.pdf" },
+    { "source": "Ulukiseire", "title": "Ettepanek hundi küttimise korraldamiseks 2025. jahihooajal (II osa A)", "url": "https://keskkonnaportaal.ee/sites/default/files/Hundi%20k%C3%BCttimisettepanek_II_osa_A_KAUR_2025.pdf" },
+    { "source": "Ulukiseire", "title": "Ettepanek hundi küttimise korraldamiseks 2025. jahihooajal (II osa B)", "url": "https://keskkonnaportaal.ee/sites/default/files/Hundi%20k%C3%BCttimisettepanek_II_osa_B_KAUR_2025.pdf" },
+    { "source": "Ulukiseire", "title": "Ettepanek hundi küttimise korraldamiseks 2025. jahihooajal (III osa)", "url": "https://keskkonnaportaal.ee/sites/default/files/Hundi%20k%C3%BCttimisettepanek%202025%20III_osa.pdf" },
+    { "source": "Ulukiseire", "title": "Ettepanek ilvese küttimise korraldamiseks 2024. jahihooajal", "url": "https://keskkonnaportaal.ee/sites/default/files/Ilvese%20k%C3%BCttimisettepanek_KAUR_2024.pdf" },
+    { "source": "Ulukiseire", "title": "Hallhülge küttimise ettepanek 2026", "url": "https://keskkonnaportaal.ee/sites/default/files/hallh%C3%BClge%20kuttimisettepanek_2026.pdf" },
+    { "source": "Ulukiseire", "title": "Suurkiskjate kaitse- ja ohjamise tegevuskava 2022–2031", "url": "https://keskkonnaportaal.ee/sites/default/files/2023-06/Suurkiskjate%20kaitse%20ja%20ohjamise%20tegevuskava%202022-2031.pdf" }
+  ]
+}

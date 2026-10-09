@@ -1,0 +1,5 @@
+# Paigaldatavad paketid: taastuvad käsuga `npm install`
+node_modules/
+
+# Allalaaditud lehed, failid ja otsinguindeks: taastuvad käsuga `node ingest.js`
+data/

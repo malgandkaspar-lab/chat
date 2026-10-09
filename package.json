@@ -1,0 +1,15 @@
+{
+  "name": "vestlus",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kohalik vestlus, mis vastab Keskkonnaagentuuri, Keskkonnaameti ja SMI materjalide põhjal",
+  "scripts": {
+    "start": "node server.js --open",
+    "ingest": "node ingest.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "pdfjs-dist": "^6.4.299",
+    "read-excel-file": "^9.3.12"
+  }
+}

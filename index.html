@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="et">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vestlus</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #F1F4F7;
+    --surface: #FFFFFF;
+    --ink: #0B1F3A;
+    --muted: #566377;
+    --line: #D3DAE3;
+    --accent: #2B55C7;
+    --accent-ink: #FFFFFF;
+    --code-bg: #E4E9F0;
+    --error: #B3261E;
+    --serif: "Sitka Text", "Sitka", Cambria, Georgia, serif;
+    --display: "Sitka Display", "Sitka Heading", "Sitka", Cambria, Georgia, serif;
+    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --mono: "Cascadia Mono", Consolas, monospace;
+    --label-col: 4.5rem;
+    --col-gap: 1.25rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0D1728;
+      --surface: #142238;
+      --ink: #E4EAF4;
+      --muted: #94A2B8;
+      --line: #26364F;
+      --accent: #8CABFF;
+      --accent-ink: #0D1728;
+      --code-bg: #1A2A44;
+      --error: #FF8A80;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 1rem;
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+
+  /* Header */
+  .bar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1rem;
+    padding: .75rem 1.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    display: flex; align-items: center; gap: .625rem;
+    margin: 0 auto 0 0;
+    font-family: var(--display); font-size: 1.375rem; font-weight: 600;
+  }
+  .flag {
+    width: 1.375rem; height: .875rem; flex: none;
+    background: linear-gradient(#0072CE 33.4%, #000 33.4% 66.7%, #FFF 66.7%);
+    outline: 1px solid var(--line);
+  }
+  select, .ghost {
+    font: inherit; font-size: .875rem; color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: .4375rem .625rem;
+  }
+  .bar { flex-wrap: nowrap; }
+  select { flex: 0 1 22rem; min-width: 0; text-overflow: ellipsis; }
+  .ghost { flex: none; cursor: pointer; }
+  .ghost:hover { border-color: var(--accent); }
+
+  /* Conversation */
+  #log { overflow-y: auto; scrollbar-gutter: stable; }
+  .column { width: 100%; max-width: 46rem; margin: 0 auto; padding: 0 1.25rem; }
+  #turns { padding-top: 1.5rem; padding-bottom: 2rem; }
+
+  .empty { padding-left: calc(var(--label-col) + var(--col-gap)); padding-top: 12vh; }
+  .empty h1 {
+    margin: 0;
+    font-family: var(--display); font-weight: 400;
+    font-size: clamp(3.25rem, 11vw, 6rem); line-height: 1; letter-spacing: -.02em;
+  }
+  .empty p { margin: 1.25rem 0 0; max-width: 30rem; color: var(--muted); line-height: 1.5; }
+  .empty #index-status { margin-top: .75rem; font-size: .875rem; }
+
+  .turn {
+    display: grid;
+    grid-template-columns: var(--label-col) minmax(0, 1fr);
+    column-gap: var(--col-gap);
+    padding: .875rem 0;
+  }
+  .who { padding-top: .25rem; text-align: right; font-size: .8125rem; color: var(--muted); }
+  .text { overflow-wrap: anywhere; }
+  .turn.user .text { font-size: 1.0625rem; font-weight: 600; line-height: 1.5; white-space: pre-wrap; }
+  .turn.assistant .body { border-left: 3px solid var(--accent); padding-left: 1.125rem; }
+  .turn.assistant .text { font-family: var(--serif); font-size: 1.125rem; line-height: 1.65; }
+
+  .text > :first-child { margin-top: 0; }
+  .text > :last-child { margin-bottom: 0; }
+  .text p { margin: 0 0 .9em; }
+  .text h3 { margin: 1.2em 0 .4em; font-family: var(--sans); font-size: 1.0625rem; line-height: 1.3; }
+  .text ul, .text ol { margin: 0 0 .9em; padding-left: 1.4em; }
+  .text li { margin: .2em 0; }
+  .text code {
+    font-family: var(--mono); font-size: .875em;
+    background: var(--code-bg); border-radius: 4px; padding: .1em .3em;
+  }
+  .text pre {
+    margin: 0 0 .9em; padding: .875rem 1rem; overflow-x: auto;
+    background: var(--code-bg); border-radius: 6px; line-height: 1.5;
+  }
+  .text pre code { background: none; padding: 0; font-size: .875rem; }
+
+  /* Citation markers in the answer and the list of sources under it */
+  .text a.cite {
+    font-family: var(--sans); font-size: .75em; font-weight: 600;
+    vertical-align: .25em; margin-left: .1em; padding: 0 .3em;
+    color: var(--accent); text-decoration: none;
+    border: 1px solid currentColor; border-radius: 4px;
+  }
+  .text a.cite:hover { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+  .sources { margin-top: 1rem; font-size: .875rem; line-height: 1.45; }
+  .sources p { margin: 0 0 .25rem; color: var(--muted); }
+  .sources ol { margin: 0; padding-left: 1.5em; }
+  .sources li { margin: .3rem 0; }
+  .sources a { color: var(--accent); text-underline-offset: .15em; }
+  .sources .meta { display: block; color: var(--muted); }
+
+  .thinking { margin-bottom: .75rem; font-size: .875rem; color: var(--muted); }
+  .thinking summary { cursor: pointer; width: fit-content; }
+  .thinking div { margin-top: .5rem; white-space: pre-wrap; line-height: 1.5; }
+
+  /* Caret shown while the reply is still being written */
+  .turn.writing .text:empty::after,
+  .turn.writing .text > :last-child::after {
+    content: ""; display: inline-block;
+    width: .5em; height: 1em; margin-left: .15em; vertical-align: text-bottom;
+    background: var(--accent);
+    animation: blink 1s steps(2, jump-none) infinite;
+  }
+  @keyframes blink { to { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .turn.writing .text::after, .turn.writing .text > :last-child::after { animation: none; }
+  }
+
+  /* Composer */
+  #form { padding: .75rem 0 .875rem; border-top: 1px solid var(--line); }
+  .composer {
+    display: flex; align-items: flex-end; gap: .5rem;
+    padding: .5rem .5rem .5rem .875rem;
+    background: var(--surface);
+    border: 1px solid var(--line); border-radius: 10px;
+  }
+  .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  textarea {
+    flex: 1; min-width: 0; resize: none;
+    max-height: 15rem; padding: .375rem 0;
+    border: 0; outline: 0; background: none; color: inherit;
+    font: inherit; font-size: 1.0625rem; line-height: 1.5;
+  }
+  textarea:focus-visible { outline: none; }
+  textarea::placeholder { color: var(--muted); }
+  #send {
+    flex: none; min-width: 5.5rem; cursor: pointer;
+    font: inherit; font-weight: 600;
+    padding: .5rem 1rem;
+    color: var(--accent-ink); background: var(--accent);
+    border: 1px solid var(--accent); border-radius: 7px;
+  }
+  #send.stop { color: var(--ink); background: none; border-color: var(--line); }
+  #status { margin: .5rem 0 0; min-height: 1.25rem; font-size: .8125rem; line-height: 1.25rem; color: var(--muted); }
+  #status.error { color: var(--error); }
+
+  @media (max-width: 640px) {
+    .turn { grid-template-columns: minmax(0, 1fr); }
+    .who { padding: 0 0 .25rem; text-align: left; }
+    .empty { padding-left: 0; padding-top: 8vh; }
+    .turn.assistant .body { padding-left: .875rem; }
+  }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <p class="brand"><span class="flag" aria-hidden="true"></span>Vestlus</p>
+    <label class="sr-only" for="model">Mudel</label>
+    <select id="model"></select>
+    <button id="reset" class="ghost" type="button">Uus vestlus</button>
+  </header>
+
+  <main id="log">
+    <div id="turns" class="column" role="log" aria-label="Vestlus">
+      <div id="empty" class="empty">
+        <h1>Tere.</h1>
+        <p id="scope">Vastan ainult Keskkonnaagentuuri, Keskkonnaameti ja statistilise metsainventuuri (SMI) materjalide põhjal. Iga vastuse all on allikad, kust info pärineb.</p>
+        <p id="index-status"></p>
+      </div>
+    </div>
+  </main>
+
+  <form id="form">
+    <div class="column">
+      <div class="composer">
+        <textarea id="input" rows="1" placeholder="Kirjuta sõnum…" aria-label="Sõnum" autofocus></textarea>
+        <button id="send" type="submit">Saada</button>
+      </div>
+      <p id="status" role="status"></p>
+    </div>
+  </form>
+
+<script>
+const DEFAULT_MODEL = 'hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:Q4_K_M';
+const HINT = 'Enter saadab, Shift+Enter teeb reavahetuse.';
+const STORE_MESSAGES = 'vestlus.messages';
+const STORE_MODEL = 'vestlus.model';
+
+const log = document.getElementById('log');
+const turns = document.getElementById('turns');
+const empty = document.getElementById('empty');
+const form = document.getElementById('form');
+const input = document.getElementById('input');
+const sendButton = document.getElementById('send');
+const statusLine = document.getElementById('status');
+const modelSelect = document.getElementById('model');
+
+let messages = loadMessages();
+let controller = null;
+
+/* ---------- storage ---------- */
+
+function loadMessages() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_MESSAGES));
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveMessages() {
+  try { localStorage.setItem(STORE_MESSAGES, JSON.stringify(messages)); } catch {}
+}
+
+/* ---------- markdown (small subset, input is escaped first) ---------- */
+
+function escapeHtml(text) {
+  return text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+}
+
+function inline(text) {
+  return text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>');
+}
+
+// Turns "[2]" and "[1, 3]" in the answer into links to the numbered sources.
+function linkCitations(html, sources) {
+  return html.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (whole, numbers) => {
+    const links = numbers.split(',').map((number) => {
+      const source = sources[Number(number) - 1];
+      if (!source || !/^https?:\/\//.test(source.url)) return null;
+      const attr = (text) => escapeHtml(text).replace(/"/g, '&quot;');
+      return `<a class="cite" href="${attr(source.url)}" title="${attr(source.title)}" target="_blank" rel="noopener">${Number(number)}</a>`;
+    });
+    return links.includes(null) ? whole : links.join('');
+  });
+}
+
+function renderMarkdown(source, sources = []) {
+  const lines = escapeHtml(source).split('\n');
+  const html = [];
+  let paragraph = [];
+  let listTag = null;
+  const closeParagraph = () => {
+    if (paragraph.length) html.push('<p>' + inline(paragraph.join('<br>')) + '</p>');
+    paragraph = [];
+  };
+  const closeList = () => {
+    if (listTag) html.push(`</${listTag}>`);
+    listTag = null;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (/^\s*```/.test(line)) {
+      closeParagraph(); closeList();
+      const code = [];
+      i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
+      html.push('<pre><code>' + code.join('\n') + '</code></pre>');
+      continue;
+    }
+
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) {
+      closeParagraph(); closeList();
+      html.push('<h3>' + inline(heading[1]) + '</h3>');
+      continue;
+    }
+
+    const item = line.match(/^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/);
+    if (item) {
+      closeParagraph();
+      const tag = item[1] ? 'ul' : 'ol';
+      if (listTag !== tag) {
+        closeList();
+        html.push(tag === 'ol' ? `<ol start="${item[2]}">` : '<ul>');
+        listTag = tag;
+      }
+      html.push('<li>' + inline(item[3]) + '</li>');
+      continue;
+    }
+
+    if (!line.trim()) { closeParagraph(); closeList(); continue; }
+    closeList();
+    paragraph.push(line);
+  }
+  closeParagraph(); closeList();
+  return linkCitations(html.join(''), sources);
+}
+
+function estonianDate(iso) {
+  const [year, month, day] = iso.split('-');
+  return `${day}.${month}.${year}`;
+}
+
+function sourceList(sources) {
+  const box = document.createElement('div');
+  box.className = 'sources';
+  const label = document.createElement('p');
+  label.textContent = 'Allikad';
+  const list = document.createElement('ol');
+  for (const source of sources) {
+    const item = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = source.url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = source.title;
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    meta.textContent = [source.source, source.label, source.date && estonianDate(source.date)].filter(Boolean).join(', ');
+    item.append(link, meta);
+    list.append(item);
+  }
+  box.append(label, list);
+  return box;
+}
+
+/* ---------- rendering ---------- */
+
+function addTurn(message) {
+  const turn = document.createElement('article');
+  turn.className = 'turn ' + message.role;
+  const who = document.createElement('div');
+  who.className = 'who';
+  who.textContent = message.role === 'user' ? 'Sina' : 'Mudel';
+  const body = document.createElement('div');
+  body.className = 'body';
+  const text = document.createElement('div');
+  text.className = 'text';
+  body.append(text);
+  turn.append(who, body);
+  turns.append(turn);
+  empty.hidden = true;
+  drawTurn(turn, message);
+  return turn;
+}
+
+function drawTurn(turn, message) {
+  const text = turn.querySelector('.text');
+  if (message.role === 'user') {
+    text.textContent = message.content;
+    return;
+  }
+  text.innerHTML = renderMarkdown(message.content, message.sources);
+  if (message.sources?.length && !turn.querySelector('.sources')) text.after(sourceList(message.sources));
+  if (message.thinking) {
+    let thinking = turn.querySelector('.thinking');
+    if (!thinking) {
+      thinking = document.createElement('details');
+      thinking.className = 'thinking';
+      const summary = document.createElement('summary');
+      summary.textContent = 'Mõttekäik';
+      thinking.append(summary, document.createElement('div'));
+      text.before(thinking);
+    }
+    thinking.lastElementChild.textContent = message.thinking;
+  }
+}
+
+function redrawAll() {
+  turns.querySelectorAll('.turn').forEach((turn) => turn.remove());
+  empty.hidden = messages.length > 0;
+  messages.forEach(addTurn);
+  scrollToEnd();
+}
+
+function nearEnd() {
+  return log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+}
+
+function scrollToEnd() {
+  log.scrollTop = log.scrollHeight;
+}
+
+function setStatus(text, isError = false) {
+  statusLine.textContent = text;
+  statusLine.classList.toggle('error', isError);
+}
+
+function setBusy(busy) {
+  sendButton.textContent = busy ? 'Peata' : 'Saada';
+  sendButton.classList.toggle('stop', busy);
+}
+
+function autosize() {
+  input.style.height = 'auto';
+  input.style.height = input.scrollHeight + 'px';
+}
+
+/* ---------- models ---------- */
+
+function modelLabel(name) {
+  if (!name.startsWith('hf.co/')) return name;
+  const [repo, tag] = name.split('/').pop().split(':');
+  return `${repo.replace(/(-i1)?-GGUF$/i, '')} (${tag})`;
+}
+
+function setModelOptions(names, selected) {
+  modelSelect.replaceChildren(...names.map((name) => new Option(modelLabel(name), name)));
+  modelSelect.value = selected;
+}
+
+async function loadModels() {
+  let saved = null;
+  try { saved = localStorage.getItem(STORE_MODEL); } catch {}
+
+  try {
+    const response = await fetch('/api/tags');
+    if (!response.ok) throw new Error();
+    const { models } = await response.json();
+    const names = models
+      .filter((m) => !m.capabilities || m.capabilities.includes('completion'))
+      .map((m) => m.name);
+    if (!names.length) throw new Error();
+    const selected = [saved, DEFAULT_MODEL].find((name) => names.includes(name)) || names[0];
+    setModelOptions(names, selected);
+    setStatus(HINT);
+  } catch {
+    setModelOptions([DEFAULT_MODEL], DEFAULT_MODEL);
+    setStatus('Ollama ei vasta. Käivita Ollama ja laadi leht uuesti.', true);
+  }
+}
+
+/* ---------- chat ---------- */
+
+async function readStream(body, onPart) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let newline;
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (line) onPart(JSON.parse(line));
+    }
+  }
+  if (buffer.trim()) onPart(JSON.parse(buffer));
+}
+
+function explain(error) {
+  if (error.message === 'ollama_unreachable') return 'Ollama ei vasta. Käivita Ollama ja saada sõnum uuesti.';
+  if (error instanceof TypeError) return 'Ühendus katkes. Käivita start.bat uuesti ja laadi leht uuesti.';
+  return 'Mudel andis vea: ' + error.message;
+}
+
+async function send(content) {
+  const question = { role: 'user', content };
+  const answer = { role: 'assistant', content: '' };
+  // "Uus vestlus" swaps in a fresh array; a reply still unwinding must not leak into it.
+  const thread = messages;
+  thread.push(question);
+  const questionTurn = addTurn(question);
+  const answerTurn = addTurn(answer);
+  answerTurn.classList.add('writing');
+  scrollToEnd();
+  setBusy(true);
+  setStatus('Otsin allikatest…');
+
+  let drawQueued = false;
+  const queueDraw = () => {
+    if (drawQueued) return;
+    drawQueued = true;
+    requestAnimationFrame(() => {
+      drawQueued = false;
+      const follow = nearEnd();
+      drawTurn(answerTurn, answer);
+      if (follow) scrollToEnd();
+    });
+  };
+
+  controller = new AbortController();
+  let failure = null;
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: modelSelect.value,
+        messages: thread.map(({ role, content }) => ({ role, content })),
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new Error(detail.error || `HTTP ${response.status}`);
+    }
+    await readStream(response.body, (part) => {
+      if (part.error) throw new Error(part.error);
+      if (part.sources) {
+        answer.sources = part.sources;
+        if (part.sources.length) setStatus('Allikad leitud. Mudel loeb neid ja koostab vastust, see võtab kuni minuti.');
+      }
+      if (part.message?.thinking) answer.thinking = (answer.thinking || '') + part.message.thinking;
+      if (part.message?.content) {
+        if (!answer.content) setStatus('');
+        answer.content += part.message.content;
+      }
+      queueDraw();
+    });
+  } catch (error) {
+    if (error.name !== 'AbortError') failure = error;
+  }
+  controller = null;
+
+  answerTurn.classList.remove('writing');
+  if (thread === messages) {
+    if (answer.content) {
+      thread.push(answer);
+      drawTurn(answerTurn, answer);
+    } else {
+      // Nothing came back: take the question out again so it can be resent.
+      thread.pop();
+      questionTurn.remove();
+      answerTurn.remove();
+      empty.hidden = thread.length > 0;
+      if (!input.value) { input.value = content; autosize(); }
+    }
+    saveMessages();
+  }
+  setBusy(false);
+  setStatus(failure ? explain(failure) : HINT, Boolean(failure));
+  input.focus();
+}
+
+/* ---------- events ---------- */
+
+form.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (controller) { controller.abort(); return; }
+  const content = input.value.trim();
+  if (!content) return;
+  input.value = '';
+  autosize();
+  send(content);
+});
+
+input.addEventListener('input', autosize);
+input.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    if (!controller) form.requestSubmit();
+  }
+});
+
+modelSelect.addEventListener('change', () => {
+  try { localStorage.setItem(STORE_MODEL, modelSelect.value); } catch {}
+});
+
+document.getElementById('reset').addEventListener('click', () => {
+  controller?.abort();
+  messages = [];
+  saveMessages();
+  redrawAll();
+  input.focus();
+});
+
+async function loadIndexStatus() {
+  const line = document.getElementById('index-status');
+  try {
+    const status = await (await fetch('/api/status')).json();
+    if (!status.ready) {
+      line.textContent = 'Otsinguindeks puudub. Käivita kaustas fail uuenda-andmeid.bat.';
+    } else {
+      if (status.focus) {
+        document.getElementById('scope').textContent =
+          `Vastan praegu ainult teemal „${status.focus}“: statistilise metsainventuuri (SMI) materjalide ning ` +
+          'Keskkonnaagentuuri ja Keskkonnaameti selleteemaliste lehtede ja uudiste põhjal. Iga vastuse all on allikad, kust info pärineb.';
+      }
+      const documents = Object.values(status.perSource).reduce((sum, count) => sum + count, 0);
+      const built = estonianDate(status.built.slice(0, 10));
+      line.textContent = status.partial
+        ? `Indekseerimine on pooleli: praegu saab otsida ${status.passages} lõigust.`
+        : `Indeksis on ${documents} dokumenti, andmed on seisuga ${built}.`;
+    }
+  } catch {
+    line.textContent = '';
+  }
+}
+
+redrawAll();
+loadModels();
+loadIndexStatus();
+</script>
+</body>
+</html>
