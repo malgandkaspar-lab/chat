@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vestlus</title>
+<script>
+  // "?embed" turns the page into a compact ask-box for an iframe on another page.
+  if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');
+</script>
 <style>
   :root {
     color-scheme: light dark;
@@ -191,13 +195,66 @@
     .empty { padding-left: 0; padding-top: 8vh; }
     .turn.assistant .body { padding-left: .875rem; }
   }
+
+  /* Embedded view (?embed): a compact ask-box meant to sit in an iframe at the top of
+     another page. The question field comes first and the conversation opens under it.
+     Type, colours and pill shapes follow the page it was made for (Keskkonnaportaal). */
+  .embed-only, #examples { display: none; }
+  .embed .embed-only { display: revert; }
+  .embed .standalone-only { display: none; }
+  :root.embed {
+    color-scheme: light;
+    --bg: #E8F6FE;
+    --surface: #FFFFFF;
+    --ink: #2E3135;
+    --muted: #53565A;
+    --line: #B9D8EE;
+    --accent: #006EB5;
+    --accent-ink: #FFFFFF;
+    --code-bg: #D6ECFA;
+    --error: #B3261E;
+    --serif: Rubik, "Segoe UI", system-ui, sans-serif;
+    --display: Rubik, "Segoe UI", system-ui, sans-serif;
+    --sans: Rubik, "Segoe UI", system-ui, sans-serif;
+    --label-col: 3.5rem;
+  }
+  .embed body { grid-template-rows: auto auto minmax(0, 1fr); }
+  .embed .bar { grid-row: 1; border-bottom: 0; padding: 1.125rem 1.5rem .25rem; }
+  .embed #form { grid-row: 2; border-top: 0; padding: .5rem 0 .875rem; }
+  .embed #log { grid-row: 3; }
+  .embed .column { max-width: none; padding: 0 1.5rem; }
+  .embed-title { margin: 0 auto 0 0; font-size: 1.25rem; font-weight: 700; color: #003087; }
+  .demo-tag {
+    font-size: .75rem; color: var(--muted); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 30px; padding: .125rem .625rem;
+  }
+  .embed .ghost, .embed #send { border-radius: 30px; }
+  .embed #send { padding: .5rem 1.5rem; }
+  .embed #send.stop { background: var(--surface); }
+  .embed .composer { border-radius: 30px; padding: .375rem .375rem .375rem 1.25rem; }
+  .embed #empty { display: none; }
+  .embed #turns { padding-top: .25rem; padding-bottom: 1.25rem; }
+  .embed .turn .text { font-size: 1rem; line-height: 1.6; }
+  .embed #examples { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+  #examples button {
+    font: inherit; font-size: .875rem; color: var(--accent); cursor: pointer;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 30px; padding: .3125rem .875rem;
+  }
+  #examples button:hover { border-color: var(--accent); }
+  /* Before the first question the box is only as tall as its content, and the page that
+     embeds it is told that height (see updateFrame). */
+  .embed:not(.has-turns), .embed:not(.has-turns) body { height: auto; }
+  .embed:not(.has-turns) body { display: block; }
+  .embed:not(.has-turns) #log, .embed:not(.has-turns) #reset, .embed.has-turns #examples { display: none; }
 </style>
 </head>
 <body>
   <header class="bar">
-    <p class="brand"><span class="flag" aria-hidden="true"></span>Vestlus</p>
+    <p class="brand standalone-only"><span class="flag" aria-hidden="true"></span>Vestlus</p>
+    <p class="embed-title embed-only">Küsi metsa ja ulukite kohta</p>
+    <span class="demo-tag embed-only">näidis</span>
     <label class="sr-only" for="model">Mudel</label>
-    <select id="model"></select>
+    <select id="model" class="standalone-only"></select>
     <button id="reset" class="ghost" type="button">Uus vestlus</button>
   </header>
 
@@ -218,6 +275,11 @@
         <button id="send" type="submit">Saada</button>
       </div>
       <p id="status" role="status"></p>
+      <div id="examples">
+        <button type="button">Kui suur on Eesti metsamaa pindala?</button>
+        <button type="button">Mitu hunti tohib sel aastal küttida?</button>
+        <button type="button">Kuidas esitada metsateatist?</button>
+      </div>
     </div>
   </form>
 
@@ -228,7 +290,10 @@ const LOCAL = ['127.0.0.1', 'localhost'].includes(location.hostname);
 const MODEL_DOWN = LOCAL
   ? 'Ollama ei vasta. Käivita Ollama ja proovi uuesti.'
   : 'Keelemudel ei vasta. Proovi mõne aja pärast uuesti.';
-const HINT = 'Enter saadab, Shift+Enter teeb reavahetuse.';
+const EMBED = document.documentElement.classList.contains('embed');
+const HINT = EMBED
+  ? 'Vastused koostab keelemudel Keskkonnaagentuuri, Keskkonnaameti, SMI ja ulukiseire materjalide põhjal. Arvud tasub allikast üle kontrollida.'
+  : 'Enter saadab, Shift+Enter teeb reavahetuse.';
 const STORE_MESSAGES = 'vestlus.messages';
 const STORE_MODEL = 'vestlus.model';
 
@@ -246,7 +311,9 @@ let controller = null;
 
 /* ---------- storage ---------- */
 
+// The embedded box starts empty every time and keeps nothing in the visitor's browser.
 function loadMessages() {
+  if (EMBED) return [];
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_MESSAGES));
     return Array.isArray(saved) ? saved : [];
@@ -256,6 +323,7 @@ function loadMessages() {
 }
 
 function saveMessages() {
+  if (EMBED) return;
   try { localStorage.setItem(STORE_MESSAGES, JSON.stringify(messages)); } catch {}
 }
 
@@ -385,6 +453,7 @@ function addTurn(message) {
   turns.append(turn);
   empty.hidden = true;
   drawTurn(turn, message);
+  updateFrame();
   return turn;
 }
 
@@ -422,6 +491,17 @@ function redrawAll() {
   empty.hidden = messages.length > 0;
   messages.forEach(addTurn);
   scrollToEnd();
+  updateFrame();
+}
+
+// Embedded view only: tells the page around the iframe how tall the box wants to be,
+// just its content before the first question and a fixed conversation height after it.
+function updateFrame() {
+  if (!EMBED) return;
+  const hasTurns = Boolean(turns.querySelector('.turn'));
+  document.documentElement.classList.toggle('has-turns', hasTurns);
+  const height = hasTurns ? 600 : document.body.scrollHeight;
+  if (window.parent !== window) window.parent.postMessage({ metsachat: true, height }, '*');
 }
 
 function nearEnd() {
@@ -435,10 +515,11 @@ function scrollToEnd() {
 function setStatus(text, isError = false) {
   statusLine.textContent = text;
   statusLine.classList.toggle('error', isError);
+  updateFrame();
 }
 
 function setBusy(busy) {
-  sendButton.textContent = busy ? 'Peata' : 'Saada';
+  sendButton.textContent = busy ? 'Peata' : EMBED ? 'Küsi' : 'Saada';
   sendButton.classList.toggle('stop', busy);
 }
 
@@ -653,6 +734,22 @@ async function loadIndexStatus() {
   } catch {
     line.textContent = '';
   }
+}
+
+if (EMBED) {
+  // The host page's typeface, loaded only here so the standalone page keeps working offline.
+  const font = document.createElement('link');
+  font.rel = 'stylesheet';
+  font.href = 'https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap';
+  document.head.append(font);
+  document.fonts?.ready.then(updateFrame);
+
+  input.placeholder = 'Kirjuta küsimus…';
+  sendButton.textContent = 'Küsi';
+  document.getElementById('examples').addEventListener('click', (event) => {
+    if (event.target.tagName === 'BUTTON' && !controller) send(event.target.textContent);
+  });
+  window.addEventListener('resize', updateFrame);
 }
 
 redrawAll();

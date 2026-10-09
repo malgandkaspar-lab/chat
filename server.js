@@ -17,6 +17,8 @@ const { ungroundedNumbers, figures, sameFigures } = require('./lib/verify');
 
 const PORT = Number(process.env.PORT) || 3939;
 const PAGE = path.join(__dirname, 'index.html');
+// How to show the chat box on another site's page in one's own browser (see naidis.html).
+const DEMO_PAGE = path.join(__dirname, 'naidis.html');
 const URL_HERE = `http://127.0.0.1:${PORT}`;
 const ON_VERCEL = Boolean(process.env.VERCEL);
 const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
@@ -425,9 +427,9 @@ const server = http.createServer((req, res) => {
   if (route === 'POST /api/chat') return chat(req, res);
   if (route === 'GET /api/tags') return tags(res);
   if (route === 'GET /api/status') return sendJson(res, 200, status());
-  if (route === 'GET /') {
+  if (route === 'GET /' || route === 'GET /naidis') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-    return fs.createReadStream(PAGE).pipe(res);
+    return fs.createReadStream(route === 'GET /' ? PAGE : DEMO_PAGE).pipe(res);
   }
   sendJson(res, 404, { error: 'not_found' });
 });
