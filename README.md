@@ -33,9 +33,20 @@ Kohalikuks proovimiseks pilvemudelitega: pane samad kaks väärtust faili `.env.
 - Allikad ja teema on failis `sources.json`. Plokk `focus` piirab indeksi märksõnade järgi.
 - `node ingest.js --all` indekseerib kõik teemad (mitu tundi).
 
+## Kuidas vastust kontrollitakse
+
+Põhimõte on „pigem jäta vastamata kui vasta valesti“ (`server.js`, `lib/verify.js`):
+
+1. **Otsingulävi.** Kui ükski lõik küsimusega piisavalt hästi ei sobi, vastab server ise, et infot ei leitud, ja mudelit ei kutsuta.
+2. **Värskus.** Küsimusele praeguse seisu või kindla aasta kohta antakse mudelile ainult selle aja allikad; muidu jäetakse välja kõik, mis on uusimast sobivast allikast üle kahe aasta vanem.
+3. **Arvude kontroll.** Iga vastuses olev arv ja aastaarv peab olema kirjas allikas, millele vastus viitab. Kui ei ole, vastust ei näidata.
+4. **Kaks katset** (ainult veebis). Arvuga vastus küsitakse mudelilt teist korda; kui kaks katset annavad eri arvu, vastust ei näidata. See kahekordistab arvuga küsimuse kulu, nii et tasuta mahust jätkub umbes 50 sellisele küsimusele päevas.
+5. **Jätkuküsimused** (ainult veebis). „Aga see aasta?“ sõnastatakse enne otsingut terviklikuks küsimuseks ja leht näitab, kuidas küsimusest aru saadi.
+
 ## Teadaolevad piirid
 
-- Arvudega vastuseid tuleb allikast üle kontrollida. Kui otsing leiab mitu sarnast allikat (sama tabel eri aastatest, Eesti ja maailma näitajad), võib mudel need segi ajada ja viidata valele allikale.
+- Kontrollid püüavad kinni vale aasta, väljamõeldud arvu ja kõikuva vastuse, aga mitte iga vea: kui mudel loeb allikat kaks korda ühtemoodi valesti, läheb vastus läbi. Tähtsa arvu puhul klõpsa allikas lahti.
+- Kontrollid on ranged ja jätavad vahel näitamata ka õige vastuse (näiteks kui mudel teisendab ühikuid või arv on PDF-i joonisel teistega kokku kleepunud).
 - Integreeritud graafikaga sülearvutis võtab vastus 15–30 sekundit.
 - Proovitud on ainult mudeliga `Llama-3.1-EstLLM-8B-Instruct-1125 (Q4_K_M)`; teisi mudeleid saab valida vestluslehe päisest.
 

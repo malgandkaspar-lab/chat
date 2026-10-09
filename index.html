@@ -139,6 +139,7 @@
   .sources a { color: var(--accent); text-underline-offset: .15em; }
   .sources .meta { display: block; color: var(--muted); }
 
+  .interpreted { margin: 0 0 .5rem; font-size: .875rem; line-height: 1.45; color: var(--muted); }
   .thinking { margin-bottom: .75rem; font-size: .875rem; color: var(--muted); }
   .thinking summary { cursor: pointer; width: fit-content; }
   .thinking div { margin-top: .5rem; white-space: pre-wrap; line-height: 1.5; }
@@ -395,6 +396,13 @@ function drawTurn(turn, message) {
   }
   text.innerHTML = renderMarkdown(message.content, message.sources);
   if (message.sources?.length && !turn.querySelector('.sources')) text.after(sourceList(message.sources));
+  // A follow-up question is answered as the full question the server made of it.
+  if (message.interpreted && !turn.querySelector('.interpreted')) {
+    const note = document.createElement('p');
+    note.className = 'interpreted';
+    note.textContent = 'Sain küsimusest aru nii: ' + message.interpreted;
+    text.before(note);
+  }
   if (message.thinking) {
     let thinking = turn.querySelector('.thinking');
     if (!thinking) {
@@ -549,8 +557,11 @@ async function send(content) {
     }
     await readStream(response.body, (part) => {
       if (part.error) throw new Error(part.error);
+      if (part.replace) answer.content = part.replace; // the server withdrew an answer it could not verify
+      if (part.stage === 'checking') setStatus('Vastuses on arv. Kontrollin seda teise katsega…');
       if (part.sources) {
         answer.sources = part.sources;
+        if (part.question) answer.interpreted = part.question;
         if (part.sources.length) {
           setStatus('Allikad leitud. Mudel loeb neid ja koostab vastust' + (LOCAL ? ', see võtab kuni minuti.' : '.'));
         }
