@@ -17,6 +17,15 @@ Vaja on [Node.js](https://nodejs.org) ja [Ollama](https://ollama.com) (Windows).
 
 Valmis otsinguindeks (`data/index.json`, `data/vectors.bin`) on repos kaasas, nii et midagi arvutada ei ole vaja.
 
+## Veebiversioon (Vercel)
+
+Sama `server.js` töötab ka Vercelis aadressil https://metsachat.vercel.app. Seal ei ole Ollamat, seega kasutab server pilvemudeleid (`lib/models.js`):
+
+- **Cloudflare Workers AI** tasuta plaan, kui Verceli projekti seadetes (Environment Variables) on `CLOUDFLARE_ACCOUNT_ID` ja `CLOUDFLARE_API_TOKEN`. Tasuta on 10 000 „neuronit“ päevas ehk mudeliga `gpt-oss-120b` umbes 100 küsimust; kui maht saab täis, ütleb leht seda ja järgmisel päeval töötab jälle. Cloudflare'il on sama otsingumudel (`bge-m3`), nii et kasutusel on sama indeks mis kohalikult.
+- Kui Cloudflare'i andmeid ei ole, proovib server Verceli AI Gatewayd. See on tasuline ja vajab eraldi indeksit (`node ingest.js --cloud`).
+
+Kohalikuks proovimiseks pilvemudelitega: pane samad kaks väärtust faili `.env.local` ja käivita `node server.js --cloud`.
+
 ## Andmete uuendamine
 
 `uuenda-andmeid.bat` laeb allikad uuesti alla ja arvutab muutunud osa indeksist. Esimene kord uues arvutis võtab see umbes poolteist tundi, sest lehtede koopiaid repos ei ole.

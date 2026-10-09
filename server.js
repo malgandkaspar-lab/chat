@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { exec } = require('node:child_process');
 const { loadIndex, indexModifiedAt, search } = require('./lib/search');
-const { CLOUD, embed, streamChat, chatModels } = require('./lib/models');
+const { CLOUD, PROVIDER, CLOUD_INDEX, embed, streamChat, chatModels } = require('./lib/models');
 
 const PORT = Number(process.env.PORT) || 3939;
 const PAGE = path.join(__dirname, 'index.html');
@@ -23,7 +23,7 @@ const MAX_SOURCE_CHARS = 3200; // about 1400 tokens
 // MIN_SCORE: below this a passage is not about the question. The value depends on the search
 // model. Measured for the local one (bge-m3): questions the sources cover score 0.62-0.80,
 // unrelated ones (recipes, football, programming) 0.42-0.51.
-const MIN_SCORE = CLOUD ? Number(process.env.CLOUD_MIN_SCORE ?? 0.35) : 0.55;
+const MIN_SCORE = CLOUD_INDEX ? Number(process.env.CLOUD_MIN_SCORE ?? 0.35) : 0.55;
 const SCORE_WINDOW = 0.08; // passages this much worse than the best one are left out
 const SCORE_TIER = 0.04; // scores closer than this count as equally good
 // The sites keep news from many years, each stating the figures of its day. Given a 2018 and
@@ -39,7 +39,7 @@ const MAX_QUESTION_CHARS = 600;
 const RATE_LIMIT = 12; // questions per visitor ...
 const RATE_WINDOW_MS = 10 * 60 * 1000; // ... in this time
 
-const NO_INDEX = CLOUD
+const NO_INDEX = CLOUD_INDEX
   ? 'Veebiversiooni otsinguindeks puudub. See tuleb teha käsuga: node ingest.js --cloud'
   : 'Otsinguindeks puudub. Käivita kaustas fail uuenda-andmeid.bat ja proovi siis uuesti.';
 const NO_ANSWER =
@@ -64,9 +64,9 @@ let indexStamp = 0;
 
 // Picks up a rebuilt index (or the partial saves of a running ingest) without a restart.
 function currentIndex() {
-  const stamp = indexModifiedAt(CLOUD);
+  const stamp = indexModifiedAt(CLOUD_INDEX);
   if (stamp !== indexStamp) {
-    const loaded = loadIndex(CLOUD);
+    const loaded = loadIndex(CLOUD_INDEX);
     if (loaded) {
       index = loaded;
       indexStamp = stamp;
@@ -119,12 +119,13 @@ function overLimit(req) {
 
 function status() {
   const current = currentIndex();
-  if (!current) return { ready: false, cloud: CLOUD };
+  if (!current) return { ready: false, cloud: CLOUD, provider: PROVIDER };
   const perSource = {};
   for (const doc of current.docs) perSource[doc.source] = (perSource[doc.source] || 0) + 1;
   return {
     ready: true,
     cloud: CLOUD,
+    provider: PROVIDER,
     partial: Boolean(current.partial),
     focus: current.focus || null,
     built: current.built,
@@ -231,6 +232,8 @@ async function chat(req, res) {
     passages = current ? await retrieve(current, messages) : [];
   } catch (error) {
     console.error(error.message);
+    // The free cloud allowance is counted per day; once it is used up every call is refused.
+    if (error.status === 429) return sendJson(res, 429, { error: 'daily_limit' });
     return sendJson(res, 502, { error: 'model_unreachable' });
   }
 
@@ -257,7 +260,9 @@ async function chat(req, res) {
   } catch (error) {
     if (!stop.signal.aborted) {
       console.error(error.message);
-      line({ error: error instanceof TypeError ? 'model_unreachable' : error.message });
+      const code = error.status === 429 ? 'daily_limit' : error instanceof TypeError ? 'model_unreachable' : null;
+      // Details of a cloud error stay in the server log; the page gets a plain reason.
+      line({ error: code || (CLOUD ? 'model_error' : error.message) });
     }
   }
   res.end();
@@ -298,7 +303,7 @@ server.on('error', (err) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   const current = currentIndex();
-  console.log(`Vestlus töötab aadressil ${URL_HERE}${CLOUD ? ' (pilvemudelitega)' : ''}`);
+  console.log(`Vestlus töötab aadressil ${URL_HERE} (mudelid: ${PROVIDER})`);
   console.log(current ? `Indeksis on ${current.chunks.length} lõiku ${current.docs.length} dokumendist.` : NO_INDEX);
   console.log('Sulgemiseks vajuta Ctrl+C või pane see aken kinni.');
   if (process.argv.includes('--open')) exec(`start "" "${URL_HERE}"`);

@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["server.js"],
       "port": 3939
+    },
+    {
+      "name": "vestlus-pilv",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js", "--cloud"],
+      "port": 3939
     }
   ]
 }
