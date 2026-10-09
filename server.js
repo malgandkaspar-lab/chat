@@ -24,7 +24,8 @@ const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 // How much the chat model gets to read. The local model manages ~64 tokens/s, so there every
 // passage costs seconds; in the cloud every passage counts against the daily allowance.
 const MAX_PASSAGES = 4;
-const MAX_SOURCE_CHARS = 3200; // about 1400 tokens
+const MAX_SOURCE_CHARS = 3800; // about 1700 tokens
+const LEAD_CHARS = 500; // how much of a news item's opening goes along with a later passage
 // MIN_SCORE: below this a passage is not about the question. The value depends on the search
 // model. Measured for bge-m3: questions the sources cover score 0.62-0.80, unrelated ones
 // (recipes, football, programming) 0.42-0.51. Set near the top of that gap on purpose.
@@ -99,6 +100,9 @@ function currentIndex() {
   if (stamp !== indexStamp) {
     const loaded = loadIndex(CLOUD_INDEX);
     if (loaded) {
+      // The opening passage of every document, for retrieve().
+      loaded.firstChunk = new Map();
+      for (const chunk of loaded.chunks) if (!loaded.firstChunk.has(chunk.doc)) loaded.firstChunk.set(chunk.doc, chunk);
       index = loaded;
       indexStamp = stamp;
     }
@@ -232,17 +236,23 @@ async function retrieve(current, query) {
   const byDate = (a, b) => dateOf(b).localeCompare(dateOf(a)) || b.score - a.score;
   const [top, ...rest] = candidates;
   const chosen = top ? [top, ...rest.sort(byDate).slice(0, MAX_PASSAGES - 1)].sort(byDate) : [];
+
+  // A news item states its point in the opening paragraph ("163 wolves may be hunted"), while
+  // a passage from further down may only mention a detail ("33 extra permits"). Such a
+  // passage is therefore read together with the opening of its article.
+  const withLead = new Set(chosen.map((hit) => current.chunks[hit.chunk]).filter((chunk) => current.firstChunk.get(chunk.doc) === chunk));
   let budget = MAX_SOURCE_CHARS;
   return chosen
-    .filter((hit, n) => {
-      budget -= current.chunks[hit.chunk].text.length;
-      return n === 0 || budget >= 0;
-    })
-    .map((hit, n) => {
+    .map((hit) => {
       const chunk = current.chunks[hit.chunk];
       const doc = current.docs[chunk.doc];
+      const first = current.firstChunk.get(chunk.doc);
+      let text = chunk.text;
+      if (doc.kind === 'uudis' && !withLead.has(first)) {
+        withLead.add(first);
+        text = `${first.text.slice(0, LEAD_CHARS)}\n[…]\n${chunk.text}`;
+      }
       return {
-        n: n + 1,
         title: doc.title,
         label: chunk.label,
         source: doc.source,
@@ -250,9 +260,14 @@ async function retrieve(current, query) {
         date: doc.date,
         url: chunk.url || doc.url,
         score: Number(hit.score.toFixed(3)),
-        text: chunk.text,
+        text,
       };
-    });
+    })
+    .filter((passage, n) => {
+      budget -= passage.text.length;
+      return n === 0 || budget >= 0;
+    })
+    .map((passage, n) => ({ n: n + 1, ...passage }));
 }
 
 function buildMessages(history, question, passages) {
