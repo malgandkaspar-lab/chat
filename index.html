@@ -20,6 +20,11 @@
     --accent-ink: #FFFFFF;
     --code-bg: #E4E9F0;
     --error: #B3261E;
+    /* Chart colours, checked against the white chart surface (dark: its dark surface). */
+    --series-1: #2A78D6;
+    --series-2: #EB6834;
+    --series-3: #1BAF7A;
+    --axis: #A7B2C1;
     --serif: "Sitka Text", "Sitka", Cambria, Georgia, serif;
     --display: "Sitka Display", "Sitka Heading", "Sitka", Cambria, Georgia, serif;
     --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
@@ -38,6 +43,10 @@
       --accent-ink: #0D1728;
       --code-bg: #1A2A44;
       --error: #FF8A80;
+      --series-1: #3987E5;
+      --series-2: #D95926;
+      --series-3: #199E70;
+      --axis: #41536F;
     }
   }
 
@@ -128,6 +137,43 @@
   }
   .text pre code { background: none; padding: 0; font-size: .875rem; }
 
+  /* A table of figures in the answer, and the chart the page draws from it */
+  .table-wrap { margin: 0 0 .9em; overflow-x: auto; }
+  .text table {
+    border-collapse: collapse; overflow-wrap: normal;
+    font-family: var(--sans); font-size: .9375rem; line-height: 1.4;
+  }
+  .text th, .text td { padding: .375rem 1.25rem .375rem 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+  .text th { font-size: .8125rem; font-weight: 600; color: var(--muted); border-bottom-color: var(--axis); }
+  .text th:last-child, .text td:last-child { padding-right: 0; }
+  .text .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .chart {
+    position: relative; margin: 0 0 .9em; padding: .875rem 1rem 1rem;
+    width: fit-content; max-width: 100%;
+    font-family: var(--sans);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  }
+  .chart figcaption { margin-bottom: .625rem; font-size: .875rem; font-weight: 600; line-height: 1.35; }
+  .chart .legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin: -.25rem 0 .5rem; font-size: .8125rem; color: var(--muted); }
+  .chart .legend span { display: inline-flex; align-items: center; gap: .375rem; }
+  .chart .legend i { width: .875rem; height: 2px; border-radius: 1px; background: var(--c); }
+  .chart svg { display: block; max-width: 100%; height: auto; overflow: visible; }
+  .chart text { font-size: 12px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .chart text.label { fill: var(--ink); }
+  .chart text.value { fill: var(--ink); font-weight: 600; }
+  .chart .grid { stroke: var(--line); stroke-width: 1; }
+  .chart .baseline { stroke: var(--axis); stroke-width: 1; }
+  .chart .line { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .mark { fill: var(--c); }
+  .chart .ring { stroke: var(--surface); stroke-width: 2; }
+  .chart .row { fill: transparent; }
+  .chart .row:hover { fill: var(--bg); }
+  .chart .tip {
+    position: absolute; transform: translate(-50%, calc(-100% - 10px)); pointer-events: none;
+    padding: .25rem .5rem; white-space: pre; font-size: .8125rem; line-height: 1.4;
+    color: var(--surface); background: var(--ink); border-radius: 4px;
+  }
+
   /* Citation markers in the answer and the list of sources under it */
   .text a.cite {
     font-family: var(--sans); font-size: .75em; font-weight: 600;
@@ -173,6 +219,7 @@
   textarea {
     flex: 1; min-width: 0; resize: none;
     max-height: 15rem; padding: .375rem 0;
+    overflow-y: hidden; /* autosize() turns scrolling on once the text outgrows the field */
     border: 0; outline: 0; background: none; color: inherit;
     font: inherit; font-size: 1.0625rem; line-height: 1.5;
   }
@@ -213,6 +260,10 @@
     --accent-ink: #FFFFFF;
     --code-bg: #D6ECFA;
     --error: #B3261E;
+    --series-1: #2A78D6;
+    --series-2: #EB6834;
+    --series-3: #1BAF7A;
+    --axis: #8FB4D2;
     --serif: Rubik, "Segoe UI", system-ui, sans-serif;
     --display: Rubik, "Segoe UI", system-ui, sans-serif;
     --sans: Rubik, "Segoe UI", system-ui, sans-serif;
@@ -409,6 +460,24 @@ function renderMarkdown(source, sources = []) {
       continue;
     }
 
+    // A table: a | row | of | cells | followed by a |---|---| line. Rows start with "|",
+    // which is also how the server recognises them when it checks their numbers.
+    const isRow = (text) => /^\s*\|.*\|\s*$/.test(text || '');
+    if (isRow(line) && /^\s*\|\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|\s*$/.test(lines[i + 1] || '')) {
+      closeParagraph(); closeList();
+      const cells = (row) => row.trim().slice(1, -1).split('|').map((cell) => cell.trim());
+      // Number columns line up on the right, under a header that does the same.
+      const number = (cell) => /^[-−]?\d[\d\s.,]*%?(\s*(\[[\d,\s]+\]|【[\d,\s]+】))*$/.test(cell);
+      const head = cells(line);
+      const rows = [];
+      for (i += 2; i < lines.length && isRow(lines[i]); i++) rows.push(cells(lines[i]));
+      i--;
+      const numeric = head.map((cell, c) => c > 0 && rows.length > 0 && rows.every((row) => !row[c] || number(row[c])));
+      const row = (tag, list) => '<tr>' + list.map((cell, c) => `<${tag}${numeric[c] ? ' class="num"' : ''}>${inline(cell)}</${tag}>`).join('') + '</tr>';
+      html.push(`<div class="table-wrap"><table><thead>${row('th', head)}</thead><tbody>${rows.map((list) => row('td', list)).join('')}</tbody></table></div>`);
+      continue;
+    }
+
     const item = line.match(/^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/);
     // A numbered list starts at 1 and counts up. "2026. aastal ..." and "19. jaanuaril ..."
     // open a sentence, not a list.
@@ -433,6 +502,257 @@ function renderMarkdown(source, sources = []) {
   }
   closeParagraph(); closeList();
   return linkCitations(html.join(''), sources);
+}
+
+/* ---------- charts ----------
+   Drawn by the page from a table in the answer, so a chart can only show figures that
+   passed the server's source check. One axis, starting at zero. */
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+// Three series colours are checked to stay apart, for colour-blind readers too. Number
+// columns that cannot share an axis get a chart each.
+const MAX_SERIES = 3;
+const MAX_BARS = 20;
+const CHAR = 6.6; // rough width of one 12px character, for making room for labels
+
+function svg(tag, attributes = {}, text) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+const seriesColor = (n) => `--c: var(--series-${n + 1})`;
+// "3 200", as the sources write it; Estonian formatting alone would leave four digits ungrouped.
+const formatNumber = (value) => value.toLocaleString('et-EE', { maximumFractionDigits: 2, useGrouping: 'always' });
+
+// "3 200", "2360,2", "51,8 %" -> a number; anything else -> null.
+function parseNumber(text) {
+  const clean = text.replace(/\s/g, '').replace('−', '-').replace(/%$/, '').replace(',', '.');
+  return /^-?\d+(\.\d+)?$/.test(clean) ? Number(clean) : null;
+}
+
+// "Raie (mln m³)" -> "mln m³" and "Raie".
+const unitOf = (header) => ((header.match(/\(([^()]+)\)\s*$/) || [])[1] || '').trim().toLowerCase();
+const withoutUnit = (header) => header.replace(/\s*\([^()]+\)\s*$/, '');
+
+// A year, a season ("2023/24") or a period ("2019–2023") -> [first year, length in years].
+function period(label) {
+  const match = label.match(/^((?:19|20)\d{2})(?:\s*[/–-]\s*(\d{4}|\d{2}))?\.?(?:\s*(?:a\.?|aasta|hooaeg|jahihooaeg|jahiaasta))?$/i);
+  if (!match) return null;
+  const start = Number(match[1]);
+  let end = !match[2] ? start : match[2].length === 4 ? Number(match[2]) : Math.floor(start / 100) * 100 + Number(match[2]);
+  if (end < start) end += 100;
+  return [start, end - start];
+}
+
+// Round axis steps: a largest value of 3580 gives steps of 1000 up to 4000.
+function axisSteps(largest) {
+  const raw = largest / 4;
+  const power = 10 ** Math.floor(Math.log10(raw));
+  const fraction = raw / power;
+  const step = (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 2.5 ? 2.5 : fraction <= 5 ? 5 : 10) * power;
+  const count = Math.ceil(largest / step - 1e-9);
+  return { max: count * step, ticks: Array.from({ length: count + 1 }, (_, n) => n * step) };
+}
+
+// Values over time: a line per series from a zero baseline, the latest value written at its end.
+function lineChart(labels, series, width, tip) {
+  const height = 220, top = 14, bottom = 26;
+  const { max, ticks } = axisSteps(Math.max(...series.flatMap((s) => s.values.filter((value) => value !== null))));
+  const y = (value) => top + (1 - value / max) * (height - top - bottom);
+
+  const ends = series.map((s) => s.values.findLastIndex((value) => value !== null));
+  const last = (n) => series[n].values[ends[n]];
+  // Ends that sit too close to tell apart are left to the legend and the hover.
+  const endHeights = series.map((s, n) => y(last(n))).sort((a, b) => a - b);
+  const labelEnds = endHeights.every((value, n) => n === 0 || value - endHeights[n - 1] >= 14);
+  const left = Math.max(...ticks.map((tick) => formatNumber(tick).length)) * CHAR + 12;
+  const right = labelEnds ? Math.max(...series.map((s, n) => formatNumber(last(n)).length)) * 7.4 + 16 : 12;
+  const span = width - left - right;
+  const x = (i) => left + (i * span) / (labels.length - 1);
+  const chart = svg('svg', { viewBox: `0 0 ${width} ${height}`, width, height, 'aria-hidden': 'true' });
+
+  for (const tick of ticks) {
+    chart.append(svg('line', { class: tick ? 'grid' : 'baseline', x1: left, x2: width - right, y1: y(tick), y2: y(tick) }));
+    chart.append(svg('text', { class: 'axis', x: left - 8, y: y(tick) + 4, 'text-anchor': 'end' }, formatNumber(tick)));
+  }
+  // As many time labels as fit side by side, always including the latest.
+  const final = labels.length - 1;
+  const room = Math.max(...labels.map((label) => label.length)) * CHAR + 16;
+  const every = Math.max(1, Math.ceil(labels.length / Math.max(1, Math.floor(span / room))));
+  labels.forEach((label, i) => {
+    if (i !== final && (i % every !== 0 || final - i < every * 0.7)) return;
+    chart.append(svg('text', { class: 'axis', x: x(i), y: height - 8, 'text-anchor': 'middle' }, label));
+  });
+
+  series.forEach((s, n) => {
+    let path = '';
+    let pen = 'M'; // a missing value breaks the line instead of being drawn across
+    s.values.forEach((value, i) => {
+      if (value === null) return void (pen = 'M');
+      path += `${pen}${x(i).toFixed(1)} ${y(value).toFixed(1)} `;
+      pen = 'L';
+    });
+    chart.append(svg('path', { class: 'line', style: seriesColor(n), d: path }));
+  });
+  series.forEach((s, n) => {
+    chart.append(svg('circle', { class: 'mark ring', style: seriesColor(n), cx: x(ends[n]), cy: y(last(n)), r: 4 }));
+    if (labelEnds) chart.append(svg('text', { class: 'value', x: x(ends[n]) + 9, y: y(last(n)) + 4 }, formatNumber(last(n))));
+  });
+
+  // Hover: a hairline at the nearest time, a dot on each line and the figures in the tooltip.
+  const hover = svg('g', { visibility: 'hidden' });
+  const hair = svg('line', { class: 'grid', y1: top, y2: height - bottom });
+  const dots = series.map((s, n) => svg('circle', { class: 'mark ring', style: seriesColor(n), r: 4 }));
+  hover.append(hair, ...dots);
+  chart.append(hover);
+  const band = span / (labels.length - 1);
+  labels.forEach((label, i) => {
+    const shown = series.map((s) => s.values[i]);
+    if (shown.every((value) => value === null)) return;
+    const zone = svg('rect', { x: x(i) - band / 2, y: 0, width: band, height, fill: 'transparent' });
+    zone.addEventListener('pointerenter', () => {
+      hover.setAttribute('visibility', 'visible');
+      hair.setAttribute('x1', x(i));
+      hair.setAttribute('x2', x(i));
+      dots.forEach((dot, n) => {
+        dot.setAttribute('visibility', shown[n] === null ? 'hidden' : 'inherit');
+        if (shown[n] === null) return;
+        dot.setAttribute('cx', x(i));
+        dot.setAttribute('cy', y(shown[n]));
+      });
+      const lines = series.length === 1
+        ? [`${label}: ${formatNumber(shown[0])}`]
+        : [label, ...series.filter((s, n) => shown[n] !== null).map((s) => `${s.name}: ${formatNumber(s.values[i])}`)];
+      tip(chart, x(i), Math.min(...shown.filter((value) => value !== null).map(y)), lines.join('\n'));
+    });
+    chart.append(zone);
+  });
+  chart.addEventListener('pointerleave', () => {
+    hover.setAttribute('visibility', 'hidden');
+    tip(null);
+  });
+  return chart;
+}
+
+// Values by name: horizontal bars from a common baseline, each with its value at the tip.
+function barChart(labels, values, width, tip) {
+  const bars = labels.map((label, i) => ({ label, value: values[i] })).filter((bar) => bar.value !== null);
+  const row = 28, thick = 16, top = 4;
+  const largest = Math.max(...bars.map((bar) => bar.value));
+  const nameWidth = Math.min(width * 0.42, Math.max(...bars.map((bar) => bar.label.length)) * CHAR + 14);
+  const fits = Math.floor((nameWidth - 14) / CHAR);
+  const valueWidth = formatNumber(largest).length * 7.4 + 14;
+  const span = width - nameWidth - valueWidth;
+  const height = top + bars.length * row + 4;
+  const chart = svg('svg', { viewBox: `0 0 ${width} ${height}`, width, height, 'aria-hidden': 'true' });
+
+  bars.forEach((bar, i) => {
+    const middle = top + i * row + row / 2;
+    const length = (bar.value / largest) * span;
+    const round = Math.min(4, length / 2);
+    const zone = svg('rect', { class: 'row', x: 0, y: middle - row / 2, width, height: row });
+    zone.addEventListener('pointerenter', () => tip(chart, nameWidth + length / 2, middle - thick / 2, `${bar.label}: ${formatNumber(bar.value)}`));
+    chart.append(zone);
+    const name = bar.label.length > fits ? bar.label.slice(0, Math.max(1, fits - 1)) + '…' : bar.label;
+    chart.append(svg('text', { class: 'label', x: nameWidth - 8, y: middle + 4, 'text-anchor': 'end' }, name));
+    // Square at the baseline, rounded at the end that carries the value.
+    chart.append(svg('path', {
+      class: 'mark',
+      style: seriesColor(0),
+      d: `M${nameWidth} ${middle - thick / 2} h${length - round} a${round} ${round} 0 0 1 ${round} ${round} v${thick - 2 * round} a${round} ${round} 0 0 1 ${-round} ${round} h${-(length - round)} z`,
+    }));
+    chart.append(svg('text', { class: 'value', x: nameWidth + length + 6, y: middle + 4 }, formatNumber(bar.value)));
+  });
+  chart.append(svg('line', { class: 'baseline', x1: nameWidth, x2: nameWidth, y1: top, y2: height - 4 }));
+  chart.addEventListener('pointerleave', () => tip(null));
+  return chart;
+}
+
+// One chart with its caption, its legend when it holds several series, and its tooltip.
+function chartFigure(labels, series, overTime, width) {
+  const figure = document.createElement('figure');
+  figure.className = 'chart';
+  const caption = document.createElement('figcaption');
+  caption.textContent = series.length === 1
+    ? series[0].header
+    : `${series.map((s) => s.name).join(', ')} (${series[0].unit})`;
+  const bubble = document.createElement('div');
+  bubble.className = 'tip';
+  bubble.hidden = true;
+  const tip = (chart, x, y, text) => {
+    bubble.hidden = !chart;
+    if (!chart) return;
+    bubble.textContent = text;
+    const box = chart.getBoundingClientRect();
+    const frame = figure.getBoundingClientRect();
+    const scale = box.width / chart.viewBox.baseVal.width;
+    const half = bubble.offsetWidth / 2;
+    const at = box.left - frame.left + x * scale;
+    bubble.style.left = `${Math.max(half + 4, Math.min(frame.width - half - 4, at))}px`;
+    bubble.style.top = `${box.top - frame.top + y * scale}px`;
+  };
+  figure.append(caption);
+  if (series.length > 1) {
+    const legend = document.createElement('div');
+    legend.className = 'legend';
+    series.forEach((s, n) => {
+      const key = document.createElement('span');
+      const swatch = document.createElement('i');
+      swatch.style.cssText = seriesColor(n);
+      key.append(swatch, s.name);
+      legend.append(key);
+    });
+    figure.append(legend);
+  }
+  figure.append(overTime ? lineChart(labels, series, width, tip) : barChart(labels, series[0].values, width, tip), bubble);
+  return figure;
+}
+
+// Puts a chart above every table in an answer that holds a series of at least three numbers.
+function addCharts(container) {
+  for (const table of container.querySelectorAll('table')) {
+    const read = (cell) => {
+      const copy = cell.cloneNode(true);
+      copy.querySelectorAll('.cite').forEach((cite) => cite.remove());
+      // "2026-01-05 (allikas [3])" -> "2026-01-05"
+      return copy.textContent
+        .replace(/\[\d+(?:\s*,\s*\d+)*\]/g, '')
+        .replace(/\(\s*(?:allikas|allikad)?[\s,]*\)/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+    const headers = [...table.querySelectorAll('thead th')].map(read);
+    let rows = [...table.querySelectorAll('tbody tr')].map((row) => [...row.children].map(read)).filter((row) => row[0]);
+
+    // Time runs left to right, oldest first, whatever order the table has.
+    const periods = rows.map((row) => period(row[0]));
+    const overTime = rows.length >= 3 && periods.every(Boolean) &&
+      new Set(periods.map(([start]) => start)).size === rows.length &&
+      new Set(periods.map(([, length]) => length)).size === 1;
+    if (overTime) rows = rows.map((row, i) => [periods[i][0], row]).sort((a, b) => a[0] - b[0]).map(([, row]) => row);
+    if (!overTime && rows.length > MAX_BARS) continue;
+
+    // A column is drawn when nearly every row has a number in it.
+    const series = headers
+      .map((header, c) => ({ header, name: withoutUnit(header), unit: unitOf(header), values: rows.map((row) => parseNumber(row[c] || '')) }))
+      .filter((column, c) => {
+        const numbers = column.values.filter((value) => value !== null);
+        return c > 0 && numbers.length >= 3 && numbers.length >= rows.length * 0.8 && numbers.every((value) => value >= 0) && numbers.some((value) => value > 0);
+      })
+      .slice(0, MAX_SERIES);
+    if (!series.length) continue;
+
+    // On a time axis "2023/2024 jahihooaeg" is just "2023/2024".
+    const labels = rows.map((row) => (overTime ? row[0].replace(/\.?\s*\p{L}[\p{L}.]*$/u, '') : row[0]));
+    const width = Math.max(300, Math.min(720, (container.clientWidth || 594) - 34));
+    // Columns in the same unit share one chart over time; anything else gets a chart each.
+    const together = overTime && series.length > 1 && series[0].unit && series.every((s) => s.unit === series[0].unit);
+    for (const group of together ? [series] : series.map((s) => [s])) {
+      table.closest('.table-wrap').before(chartFigure(labels, group, overTime, width));
+    }
+  }
 }
 
 function estonianDate(iso) {
@@ -491,6 +811,7 @@ function drawTurn(turn, message) {
     return;
   }
   text.innerHTML = renderMarkdown(message.content, message.sources);
+  addCharts(text);
   if (message.sources?.length && !turn.querySelector('.sources')) text.after(sourceList(message.sources));
   // A follow-up question is answered as the full question the server made of it.
   if (message.interpreted && !turn.querySelector('.interpreted')) {
@@ -554,6 +875,8 @@ function setBusy(busy) {
 function autosize(field = input) {
   field.style.height = 'auto';
   field.style.height = field.scrollHeight + 'px';
+  // A scrollbar only once the text outgrows the field's largest size.
+  field.style.overflowY = field.scrollHeight > 240 ? 'auto' : 'hidden';
 }
 
 /* ---------- models ---------- */
@@ -669,6 +992,7 @@ async function send(content, field = input) {
       if (part.error) throw new Error(part.error);
       if (part.replace) answer.content = part.replace; // the server withdrew an answer it could not verify
       if (part.stage === 'checking') setStatus('Vastuses on arv. Kontrollin seda teise katsega…');
+      if (part.stage === 'revising') setStatus('Vastus ei klappinud allikatega täpselt. Lasen selle ümber kirjutada…');
       if (part.sources) {
         answer.sources = part.sources;
         if (part.question) answer.interpreted = part.question;

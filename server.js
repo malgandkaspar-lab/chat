@@ -13,7 +13,7 @@ const path = require('node:path');
 const { exec } = require('node:child_process');
 const { loadIndex, indexModifiedAt, search } = require('./lib/search');
 const { CLOUD, PROVIDER, CLOUD_INDEX, embed, streamChat, chatModels } = require('./lib/models');
-const { ungroundedNumbers, figures, sameFigures } = require('./lib/verify');
+const { ungroundedNumbers, withoutTables, figures, sameFigures } = require('./lib/verify');
 
 const PORT = Number(process.env.PORT) || 3939;
 const PAGE = path.join(__dirname, 'index.html');
@@ -33,8 +33,9 @@ const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 
 // How much the chat model gets to read. The local model manages ~64 tokens/s, so there every
 // passage costs seconds; in the cloud every passage counts against the daily allowance.
-const MAX_PASSAGES = 4;
-const MAX_SOURCE_CHARS = 3800; // about 1700 tokens
+// The cloud model reads fast, so it gets more to draw background and data series from.
+const MAX_PASSAGES = CLOUD ? 6 : 4;
+const MAX_SOURCE_CHARS = CLOUD ? 6000 : 3800; // about 2700 or 1700 tokens
 const LEAD_CHARS = 500; // how much of a news item's opening goes along with a later passage
 // MIN_SCORE: below this a passage is not about the question. The value depends on the search
 // model. Measured for bge-m3: questions the sources cover score 0.62-0.80, unrelated ones
@@ -99,7 +100,92 @@ Reeglid:
 - Kui sama näitaja kohta on eri allikates eri arvud, kasuta kõige uuema kuupäevaga allikat.
 - Kui küsitakse praeguse seisu kohta ("see aasta", "praegu"), kasuta ainult värskeimat allikat ja ütle selle kuupäev. Kui ükski allikas selle aja kohta ei käi, ütle, et allikates selle kohta kindlat infot ei ole.
 - Erista, kas küsitakse lubatud või kavandatud mahtu ("tohib küttida") või tegelikku tulemust ("kütiti"), ja vasta sellele, mida küsiti.
-- Vasta eesti keeles täislausega, lühidalt ja täpselt. Arvud ja ühikud kirjuta täpselt nii, nagu need allikas on; ära teisenda ühikuid ega arvuta ise.`;
+- Ära anna hinnanguid ega tee omapoolseid järeldusi, kokkuvõtteid või üldistusi; ära kasuta järeldavaid sõnu nagu "seega", "järelikult" või "kokkuvõttes". Koguste, muutuste ja võrdluste küsimusele ära vasta sõnaga "Jah" ega "Ei", vaid esita allikas olevad arvud koos aja või perioodiga ja ütle, kelle andmed need on (näiteks "Keskkonnaagentuuri 9.04.2026 ülevaate järgi ...").
+- Ära muuda allika ajamäärangut aastaarvudeks. Kui allikas ütleb "viimasel kümnendil" või "20 aasta jooksul", kirjuta samamoodi ja ära arvuta sellest aastaid.
+- Ära arvuta ise vahesid, summasid, keskmisi ega protsente. Muutust kirjelda allika arvudega kõrvuti (näiteks "2023/2024 kütiti 4 061, 2024/2025 kütiti 3 551") ja ära lisa üldistavaid sõnu nagu "järjekindlalt", "oluliselt" või "järsult", kui allikas neid ei kasuta.
+- Kui allikas annab eri perioodide või eri näitajate kohta erineva pildi, too need kõik välja, mitte ainult üks. Kui allikas ise ütleb, et näitajat ei saa lihtsustatult tõlgendada, ütle ka seda.
+- Kasuta neutraalset ja asjalikku sõnastust. Ära kasuta hinnangulisi ega ärevust tekitavaid sõnu, mida allikas ei kasuta.
+- Vasta eesti keeles täislausetega, selgelt ja täpselt. Arvud ja ühikud kirjuta täpselt nii, nagu need allikas on; ära teisenda ühikuid ega arvuta ise.
+
+Vastuse ülesehitus (ilma vahepealkirjadeta, ära kirjuta lõikude ette "Vastus:" ega "Taust:"; ära kirjelda allikaid ega oma vastust, näiteks "Allikas [1] annab ..."):
+1. Esimeses lõigus otsene vastus allika arvudega. Alusta seda allika nimetamisega, näiteks "Keskkonnaagentuuri 9.04.2026 ülevaate järgi ..." või "SMI 2024. aasta andmetel ...".
+2. Teises lõigus taust kahe kuni nelja lausega, ainult allikatest: mis aja ja mille kohta arvud käivad, allikas nimetatud täpsustused ja reservatsioonid ning teised samade allikate arvud, mis aitavad vastust mõista. Ära seleta mõisteid oma sõnadega ega lisa selgitusi, mida allikas ei anna. Kui allikates tausta ei ole, jäta see lõik ära.
+3. Kui allikates on küsimusega seotud arvurida (vähemalt kolm väärtust: mitu aastat, maakonda või liiki), lisa lõppu Markdown-tabel. Esimene veerg on aasta, periood või nimetus, järgmistes veergudes arvud (kõige rohkem kolm arvuveergu, näiteks kui võrreldakse kahte näitajat). Esimesse veergu kirjuta ainult aasta või hooaeg ühtmoodi kogu tabelis (näiteks "2023/2024"), ilma lisasõnadeta, ja ära korda sama aega kahel real. Ühik kirjuta veeru päisesse sulgudesse, näiteks "Raiemaht (mln m³)", lahtrisse ainult arv. Tabelisse pane ainult allikas kirjas olevad arvud, iga rea arvud samast allikast, kõige rohkem 15 rida, ajaread vanemast uuemani. Leht joonistab tabelist ise graafiku, nii et graafikut ära kirjelda.`;
+
+// A question about amounts, changes or comparisons is answered with the sources' figures,
+// never with a verdict. "Jah, raiutakse rohkem kui juurde kasvab" was given for a source
+// that says the opposite holds over twenty years and warns against that very simplification.
+const QUANTITY_QUESTION = /(rohkem|vähem|suurem|väiksem|enam|kasva|vähene|suurene|kahane|liiga|palju|mitu|kui suur|osakaal|protsen|maht|arv)/i;
+const VERDICT_OPENING = /^\s*(jah|ei|kindlasti|loomulikult|paraku|kahjuks)(?![\p{L}])/iu;
+const OWN_CONCLUSION = /(?<![\p{L}])(seega|järelikult|niisiis|teisisõnu|kokkuvõttes|kokkuvõtvalt)(?![\p{L}])/iu;
+// "Is more felled than grows?" asks for a comparison. Its answer has to open by naming whose
+// figures follow ("Keskkonnaagentuuri 9.04.2026 ülevaate järgi ..."), so that it cannot
+// open with a claim in the model's own voice ("Eestis raiutakse rohkem, kui juurde kasvab").
+const COMPARISON_QUESTION = /(rohkem|vähem|suurem|väiksem|enam|liiga|kasva|vähene|suurene|kahane)/i;
+const ATTRIBUTION = /(?<![\p{L}])(järgi|andmetel|andmeil|kohaselt|põhjal|teatel|hinnangul)(?![\p{L}])/iu;
+const namesSourceFirst = (text) => ATTRIBUTION.test(text.split(/[,:;]|\s[–-]\s|(?<=\p{Ll})[.!?]\s/u)[0]);
+const OPEN_WITH_SOURCE = 'Alusta vastust allika nimetamisega, näiteks "Keskkonnaagentuuri 9.04.2026 ülevaate järgi ...". ';
+const RETRY_WITHOUT_VERDICT =
+  'See vastus andis hinnangu, tegi omapoolse järelduse või jäi ilma arvudeta. Kirjuta vastus uuesti. Ära alusta sõnaga "Jah" ega "Ei", ära anna hinnangut ' +
+  'ja ära kasuta järeldavaid sõnu ("seega", "järelikult", "kokkuvõttes"). ' + OPEN_WITH_SOURCE +
+  'Esita ainult allikates olevad arvud ja perioodid. Kui allikas nimetab eri perioodide kohta erinevat tulemust, too need kõik välja. ' +
+  `Kui allikates arve ei ole, ütle täpselt: "${UNSURE}"`;
+const retryUngrounded = (problems) =>
+  `Sinu vastuses olid arvud (${[...new Set(problems.map((p) => p.number))].join(', ')}), mida nende juures viidatud allikas kirjas ei ole. Kirjuta vastus uuesti. ` +
+  'Kasuta ainult arve ja aastaid, mis on allikas täpselt nii kirjas, ja pane iga arvu järele viide just sellele allikale, kus see arv on. ' +
+  'Ära tuleta aastaarve ise: kui allikas ütleb "viimasel kümnendil", ära kirjuta selle asemele aastate vahemikku. Arv, mida allikast võtta ei saa, jäta välja. ' +
+  'Tabeli igal real peavad aasta ja arv olema kirjas ühes ja samas allikas; kirjuta selle allika viide rea lõppu. ' +
+  OPEN_WITH_SOURCE;
+const NO_FIGURES =
+  'Allikates ei ole selle kohta arve, mille põhjal üheselt vastata, ja hinnangut ma ise ei anna. Allpool on allikad, millest vastust otsiti.';
+
+// Words that judge or alarm. They are fine when a source uses them (or the question asks
+// about them) and a fault when they are the model's own colouring of the figures.
+const LOADED =
+  /(?<![\p{L}])(järjekindl\p{L}*|oluliselt|järs[ku]\p{L}*|drastil\p{L}*|dramaatil\p{L}*|märkimisväär\p{L}*|märgatav\p{L}*|murettekita\p{L}*|ohtlik\p{L}*|katastroof\p{L}*|kriis\p{L}*|kriitili\p{L}*|hävi\p{L}*|liiga|ülerai\p{L}*|alarmeeri\p{L}*|häiriv\p{L}*|tohutu\p{L}*|massili\p{L}*|hüppeli\p{L}*|plahvatusli\p{L}*|paraku|kahjuks|õnneks)/giu;
+function loadedWords(question, answer, passages) {
+  const allowed = [question, ...passages.flatMap((passage) => [passage.title, passage.text])].join('\n').toLowerCase();
+  // Endings vary ("drastiline", "drastiliselt"), so a longer word is looked up by its beginning.
+  const stem = (word) => (word.length <= 7 ? word : word.slice(0, -3)).toLowerCase();
+  return [...new Set(withoutTables(answer).match(LOADED) || [])].filter((word) => !allowed.includes(stem(word)));
+}
+const retryLoaded = (words) =>
+  `Sinu vastuses olid hinnangulised sõnad (${words.join(', ')}), mida allikad ei kasuta. Kirjuta vastus uuesti ilma nendeta: ` +
+  'esita arvud koos aja ja allikaga ning jäta muutuse suuruse hindamine lugejale.';
+const notNeutral = (words) =>
+  `Ma ei saa sellele allikate põhjal neutraalselt vastata. Mudeli vastuses oli hinnanguline sõna (${words.join(', ')}), ` +
+  'mida allikad ei kasuta, seega jätsin vastuse näitamata. Allpool on allikad, millest vastust otsiti.';
+
+// The sentences of a line of text. "2025. aastal" and "19. jaanuaril" do not end one.
+const sentencesOf = (text) => text.trim().split(/(?<=[.!?\]])\s+(?=[\p{Lu}\d])/u);
+// An answer without the sentences that `unwanted` picks out. Table rows are left alone.
+function withoutSentences(answer, unwanted) {
+  let dropped = false;
+  const lines = answer.split('\n').map((line) => {
+    if (line.trim().startsWith('|')) return line;
+    const sentences = sentencesOf(line);
+    const kept = sentences.filter((sentence) => !unwanted(sentence));
+    if (kept.length === sentences.length) return line;
+    dropped = true;
+    return kept.join(' ');
+  });
+  return dropped ? lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() : answer;
+}
+
+const CITED = /\[\d+(?:\s*,\s*\d+)*\]/;
+const RETRY_UNCITED =
+  'Sinu vastuses ei olnud arvude juures viiteid. Kirjuta vastus uuesti ja pane iga arvu järele nurksulgudes selle allika number, kus see arv kirjas on, näiteks [2].';
+const UNCITED =
+  'Ma ei saa sellele allikate põhjal kindlalt vastata. Mudeli vastuses ei olnud arvude juures viiteid allikatele, ' +
+  'seega jätsin vastuse näitamata. Allpool on allikad, millest vastust otsiti.';
+
+function givesVerdict(question, answer) {
+  if (!QUANTITY_QUESTION.test(question) || answer.includes(UNSURE.slice(0, -1))) return false;
+  const text = withoutTables(answer);
+  if (COMPARISON_QUESTION.test(question) && !namesSourceFirst(text)) return true;
+  // Figures may stand in the text or in a table.
+  return VERDICT_OPENING.test(text) || OWN_CONCLUSION.test(text) || (!figures(answer).length && text === answer);
+}
 
 let index = null;
 let indexStamp = 0;
@@ -211,12 +297,21 @@ async function standalone(model, messages, signal) {
 }
 
 // Evens out how models write citations: 【2】 and "[2, 2026-01-19]" both become plain [2].
+// Labels a model puts before its paragraphs ("**Vastus:**", "**Taust:**") are dropped, and
+// so is a table of a single row, which says nothing its sentence has not said.
 function tidyAnswer(answer) {
-  return answer
+  const tidy = answer
     .replace(/[\[【](\d{1,2})\s*,\s*(\d{4}[-‑]\d{2}[-‑]\d{2}|\d{1,2}\.\d{1,2}\.\d{4})[\]】]/g, '($2) [$1]')
     .replace(/【(\d+(?:\s*,\s*\d+)*)】/g, '[$1]')
-    .trim();
+    .replace(PARAGRAPH_LABEL, '');
+  return withoutTables(tidy, 2);
 }
+const LABELS = '(?:Otsene vastus|Vastus|Taust|Tabel|Andmed)';
+// "### Taust", "**Taust:**" or "Taust:" at the start of a line; never the word in a sentence.
+const PARAGRAPH_LABEL = new RegExp(
+  `^[ \\t]*(?:#{1,4}[ \\t]+${LABELS}[ \\t]*:?[ \\t]*$|\\*\\*${LABELS}[ \\t]*:?\\*\\*:?|${LABELS}:)[ \\t]*\\n?`,
+  'gimu',
+);
 
 // Finds the passages worth showing to the model, best first.
 async function retrieve(current, query) {
@@ -376,23 +471,69 @@ async function chat(req, res) {
   let answer = '';
   try {
     const prompt = buildMessages(history, question, passages);
+    const sample = async (messages, temperature) => {
+      let text = '';
+      await streamChat({ model, messages, signal: stop.signal, temperature }, (part) => {
+        if (part.content) text += part.content;
+      });
+      return tidyAnswer(text);
+    };
+    // A question about amounts will need the second attempt of check 3. It is asked for
+    // right away, alongside the answer, so that checking does not double the wait.
+    const early = DOUBLE_CHECK && QUANTITY_QUESTION.test(question)
+      ? sample(prompt, SECOND_TEMPERATURE).then((text) => ({ text }), (error) => ({ error }))
+      : null;
     await streamChat({ model, messages: prompt, signal: stop.signal }, (part) => {
       if (part.content) answer += part.content;
       if (!HOLD_ANSWER) line({ message: { role: 'assistant', ...part } });
     });
     answer = tidyAnswer(answer);
 
-    // Two checks before the answer counts; failing either means no answer is given.
-    let refusal = null;
-    const problems = ungroundedNumbers(answer, passages);
-    if (problems.length) refusal = withdrawn(problems);
+    // Checks before the answer counts. An answer that fails any is sent back once with the
+    // reasons; failing again means no answer is given.
+    const faults = (lastChance) => {
+      const found = [];
+      // 1. No verdicts, no conclusions of the model's own, no loaded words the sources do not use.
+      // On the last chance a later sentence that still has one is left out; the answer
+      // stands if its opening sentence is untouched and the rest passes.
+      if (lastChance) {
+        const trimmed = withoutSentences(answer, (sentence) =>
+          (QUANTITY_QUESTION.test(question) && OWN_CONCLUSION.test(sentence)) || loadedWords(question, sentence, passages).length > 0);
+        if (trimmed !== answer && sentencesOf(trimmed)[0] === sentencesOf(answer)[0]) {
+          console.error(`Lause jäi näitamata: ${answer.replace(/\s+/g, ' ').slice(0, 600)}`);
+          answer = trimmed;
+        }
+      }
+      if (givesVerdict(question, answer)) found.push({ again: RETRY_WITHOUT_VERDICT, refusal: NO_FIGURES });
+      const loaded = loadedWords(question, answer, passages);
+      if (loaded.length) found.push({ again: retryLoaded(loaded), refusal: notNeutral(loaded) });
+      // 2. Every number must stand in the source it cites, and figures need a citation at all.
+      let problems = ungroundedNumbers(answer, passages);
+      // On the last chance a table that fails is left out; the text stands if it passes on its own.
+      if (problems.length && lastChance && withoutTables(answer) !== answer && !ungroundedNumbers(withoutTables(answer), passages).length) {
+        console.error(`Tabel jäi näitamata (${problems.map((p) => p.number).join(', ')}): ${answer.replace(/\s+/g, ' ').slice(-400)}`);
+        answer = withoutTables(answer);
+        problems = [];
+      }
+      if (problems.length) found.push({ again: retryUngrounded(problems), refusal: withdrawn(problems) });
+      else if (figures(answer).length && !CITED.test(withoutTables(answer))) found.push({ again: RETRY_UNCITED, refusal: UNCITED });
+      return found;
+    };
+    let found = faults(!HOLD_ANSWER);
+    if (found.length && HOLD_ANSWER) {
+      console.error(`Vastus ei läbinud kontrolli, küsin uuesti: ${answer.replace(/\s+/g, ' ').slice(0, 400)}`);
+      line({ stage: 'revising' });
+      const reasons = found.map((fault) => fault.again).join('\n\n');
+      answer = await sample([...prompt, { role: 'assistant', content: answer }, { role: 'user', content: reasons }]);
+      found = faults(true);
+    }
+    let refusal = found.length ? found[0].refusal : null;
+    // 3. A second attempt must lead with the same figure.
     if (!refusal && DOUBLE_CHECK && figures(answer).length) {
       line({ stage: 'checking' });
-      let second = '';
-      await streamChat({ model, messages: prompt, signal: stop.signal, temperature: SECOND_TEMPERATURE }, (part) => {
-        if (part.content) second += part.content;
-      });
-      second = tidyAnswer(second);
+      const opinion = early ? await early : { text: await sample(prompt, SECOND_TEMPERATURE) };
+      if (opinion.error) throw opinion.error;
+      const second = opinion.text;
       if (!sameFigures(answer, second)) {
         refusal = disagreed(figures(answer)[0], figures(second)[0]);
         console.error(`Teine katse: ${second.replace(/\s+/g, ' ').slice(0, 300)}`);
