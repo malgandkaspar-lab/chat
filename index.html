@@ -243,7 +243,7 @@
   #examples button:hover { border-color: var(--accent); }
   /* Before the first question the box is only as tall as its content, and the page that
      embeds it is told that height (see updateFrame). */
-  .embed:not(.has-turns), .embed:not(.has-turns) body { height: auto; }
+  .embed:not(.has-turns), .embed:not(.has-turns) body { height: auto; overflow: hidden; }
   .embed:not(.has-turns) body { display: block; }
   .embed:not(.has-turns) #log, .embed:not(.has-turns) #reset, .embed.has-turns #examples { display: none; }
 </style>
@@ -742,7 +742,9 @@ if (EMBED) {
   font.rel = 'stylesheet';
   font.href = 'https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap';
   document.head.append(font);
-  document.fonts?.ready.then(updateFrame);
+  // The font arriving, a status line wrapping, a narrower page: whatever changes the
+  // box's height gets reported.
+  new ResizeObserver(updateFrame).observe(document.body);
 
   input.placeholder = 'Kirjuta küsimus…';
   sendButton.textContent = 'Küsi';
