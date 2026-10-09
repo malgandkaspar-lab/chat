@@ -178,7 +178,7 @@
   }
   textarea:focus-visible { outline: none; }
   textarea::placeholder { color: var(--muted); }
-  #send {
+  #send, #followup-send {
     flex: none; min-width: 5.5rem; cursor: pointer;
     font: inherit; font-weight: 600;
     padding: .5rem 1rem;
@@ -228,8 +228,20 @@
     font-size: .75rem; color: var(--muted); background: var(--surface);
     border: 1px solid var(--line); border-radius: 30px; padding: .125rem .625rem;
   }
-  .embed .ghost, .embed #send { border-radius: 30px; }
-  .embed #send { padding: .5rem 1.5rem; }
+  .embed .ghost, .embed #send, .embed #followup-send { border-radius: 30px; }
+  .embed #send, .embed #followup-send { padding: .5rem 1.5rem; }
+  #followup-send:disabled { opacity: .5; cursor: default; }
+  /* The box under an answer for asking on about the same question. The field at the top
+     always starts a new question. */
+  #followup { display: none; }
+  .embed.has-turns #followup {
+    display: block;
+    padding-left: calc(1.5rem + var(--label-col) + var(--col-gap)); padding-bottom: 1.5rem;
+  }
+  .embed #followup textarea { font-size: 1rem; }
+  @media (max-width: 640px) {
+    .embed.has-turns #followup { padding-left: 1.5rem; }
+  }
   .embed #send.stop { background: var(--surface); }
   .embed .composer { border-radius: 30px; padding: .375rem .375rem .375rem 1.25rem; }
   .embed #empty { display: none; }
@@ -266,6 +278,12 @@
         <p id="index-status"></p>
       </div>
     </div>
+    <form id="followup" class="column">
+      <div class="composer">
+        <textarea id="followup-input" rows="1" placeholder="Küsi selle kohta edasi…" aria-label="Jätkuküsimus"></textarea>
+        <button id="followup-send" type="submit">Küsi edasi</button>
+      </div>
+    </form>
   </main>
 
   <form id="form">
@@ -304,6 +322,9 @@ const form = document.getElementById('form');
 const input = document.getElementById('input');
 const sendButton = document.getElementById('send');
 const statusLine = document.getElementById('status');
+const followForm = document.getElementById('followup');
+const followInput = document.getElementById('followup-input');
+const followSend = document.getElementById('followup-send');
 const modelSelect = document.getElementById('model');
 
 let messages = loadMessages();
@@ -527,11 +548,12 @@ function setStatus(text, isError = false) {
 function setBusy(busy) {
   sendButton.textContent = busy ? 'Peata' : EMBED ? 'Küsi' : 'Saada';
   sendButton.classList.toggle('stop', busy);
+  followSend.disabled = busy;
 }
 
-function autosize() {
-  input.style.height = 'auto';
-  input.style.height = input.scrollHeight + 'px';
+function autosize(field = input) {
+  field.style.height = 'auto';
+  field.style.height = field.scrollHeight + 'px';
 }
 
 /* ---------- models ---------- */
@@ -601,7 +623,8 @@ function explain(error) {
   return 'Mudel andis vea: ' + error.message;
 }
 
-async function send(content) {
+// `field` is the box the question was typed in; a question that gets no answer goes back there.
+async function send(content, field = input) {
   const question = { role: 'user', content };
   const answer = { role: 'assistant', content: '' };
   // "Uus vestlus" swaps in a fresh array; a reply still unwinding must not leak into it.
@@ -676,13 +699,14 @@ async function send(content) {
       questionTurn.remove();
       answerTurn.remove();
       empty.hidden = thread.length > 0;
-      if (!input.value) { input.value = content; autosize(); }
+      if (!field.value) { field.value = content; autosize(field); }
     }
     saveMessages();
   }
   setBusy(false);
   setStatus(failure ? explain(failure) : HINT, Boolean(failure));
-  input.focus();
+  // Inside another page the box leaves the focus alone, or that page would jump about.
+  if (!EMBED) input.focus();
 }
 
 /* ---------- events ---------- */
@@ -694,16 +718,33 @@ form.addEventListener('submit', (event) => {
   if (!content) return;
   input.value = '';
   autosize();
+  // In the embedded box the field at the top always asks a new, separate question;
+  // asking on about the answer is what the box under it is for.
+  if (EMBED) {
+    messages = [];
+    turns.querySelectorAll('.turn').forEach((turn) => turn.remove());
+  }
   send(content);
 });
 
-input.addEventListener('input', autosize);
-input.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-    event.preventDefault();
-    if (!controller) form.requestSubmit();
-  }
+followForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const content = followInput.value.trim();
+  if (!content || controller) return;
+  followInput.value = '';
+  autosize(followInput);
+  send(content, followInput);
 });
+
+for (const [field, owner] of [[input, form], [followInput, followForm]]) {
+  field.addEventListener('input', () => autosize(field));
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      if (!controller) owner.requestSubmit();
+    }
+  });
+}
 
 modelSelect.addEventListener('change', () => {
   try { localStorage.setItem(STORE_MODEL, modelSelect.value); } catch {}
@@ -754,6 +795,7 @@ if (EMBED) {
 
   input.placeholder = 'Kirjuta küsimus…';
   sendButton.textContent = 'Küsi';
+  document.getElementById('reset').textContent = 'Tühjenda';
   document.getElementById('examples').addEventListener('click', (event) => {
     if (event.target.tagName === 'BUTTON' && !controller) send(event.target.textContent);
   });
