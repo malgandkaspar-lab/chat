@@ -1,5 +1,9 @@
 # Paigaldatavad paketid: taastuvad käsuga `npm install`
 node_modules/
 
-# Allalaaditud lehed, failid ja otsinguindeks: taastuvad käsuga `node ingest.js`
-data/
+# Allalaaditud lehtede koopiad ja failid: `node ingest.js` laeb need ise uuesti alla.
+# Valmis otsinguindeks (data/index.json ja data/vectors.bin) on repos, et vestlus
+# töötaks kohe pärast kloonimist.
+data/cache/
+data/files/
+data/*.tmp
