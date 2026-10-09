@@ -64,7 +64,7 @@
 
   <h2>Kast ise</h2>
   <p class="muted">Sama kast, mis lehele ilmub. Seda saab siin kohe proovida.</p>
-  <iframe id="preview" src="/?embed=1" title="Küsi metsa ja ulukite kohta"></iframe>
+  <iframe id="preview" src="/vestlus?embed=1" title="Küsi metsa ja ulukite kohta"></iframe>
 </main>
 
 <script>
@@ -79,7 +79,7 @@ function inject(origin) {
   box.id = id;
   box.style.cssText = 'max-width:1140px;margin:0 auto;padding:24px;box-sizing:border-box;';
   var frame = document.createElement('iframe');
-  frame.src = origin + '/?embed=1';
+  frame.src = origin + '/vestlus?embed=1';
   frame.title = 'Küsi metsa ja ulukite kohta';
   frame.style.cssText = 'display:block;width:100%;height:230px;border:0;border-radius:12px;background:#E8F6FE;transition:height .25s ease;';
   box.appendChild(frame);

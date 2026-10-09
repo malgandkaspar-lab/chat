@@ -359,6 +359,7 @@ function renderMarkdown(source, sources = []) {
   const html = [];
   let paragraph = [];
   let listTag = null;
+  let nextNumber = 1; // the number the next item of a numbered list should carry
   const closeParagraph = () => {
     if (paragraph.length) html.push('<p>' + inline(paragraph.join('<br>')) + '</p>');
     paragraph = [];
@@ -388,7 +389,12 @@ function renderMarkdown(source, sources = []) {
     }
 
     const item = line.match(/^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/);
-    if (item) {
+    // A numbered list starts at 1 and counts up. "2026. aastal ..." and "19. jaanuaril ..."
+    // open a sentence, not a list.
+    const numbered = item && item[2] ? Number(item[2]) : null;
+    const isItem = item && (numbered === null || numbered === 1 || numbered === nextNumber);
+    if (isItem) {
+      if (numbered !== null) nextNumber = numbered + 1;
       closeParagraph();
       const tag = item[1] ? 'ul' : 'ol';
       if (listTag !== tag) {

@@ -26,6 +26,14 @@ Sama `server.js` töötab ka Vercelis aadressil https://metsachat.vercel.app. Se
 
 Kohalikuks proovimiseks pilvemudelitega: pane samad kaks väärtust faili `.env.local` ja käivita `node server.js --cloud`.
 
+## Näidis Keskkonnaportaali lehel
+
+Praktikaprojekti esitlemiseks näitab veebiversiooni avaleht Keskkonnaportaali metsalehte (`keskkonnaportaal.ee/et/teemad/mets`) täpselt sellisena, nagu see parajasti on, ja lisab sisu algusesse vestluskasti. See ei ole Keskkonnaportaali ametlik leht.
+
+- Portaali sisu siia reposse ei kopeerita: server toob lehe päringu ajal portaalist (`server.js`, `portalPage`) ning stiilid, skriptid ja pildid laetakse otse portaalist. Lingid viivad päris portaali.
+- Teadlikud erinevused: leht keelab otsimootoritel indekseerimise, portaali külastusstatistika ja reCAPTCHA skriptid on välja jäetud, tagasisidevorm ei saada midagi, vahekaardi pealkirja lõpus on „praktika näidis“ ja vestluskastis märge „näidis“.
+- Aadressid: `/` näidisleht (kohalikult `/portaal`), `/vestlus` vestlus eraldi lehena, `/vestlus?embed=1` kast ise, `/naidis` järjehoidja-nupp, millega saab kasti oma brauseris päris portaali lehele panna.
+
 ## Andmete uuendamine
 
 `uuenda-andmeid.bat` laeb allikad uuesti alla ja arvutab muutunud osa indeksist. Esimene kord uues arvutis võtab see umbes poolteist tundi, sest lehtede koopiaid repos ei ole.

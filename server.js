@@ -19,6 +19,14 @@ const PORT = Number(process.env.PORT) || 3939;
 const PAGE = path.join(__dirname, 'index.html');
 // How to show the chat box on another site's page in one's own browser (see naidis.html).
 const DEMO_PAGE = path.join(__dirname, 'naidis.html');
+
+// The practice demo for the portal's owner: Keskkonnaportaal's forest page exactly as it is,
+// with the chat box at the top of its content. On the web this is the home page; locally it
+// is at /portaal and the home page stays the plain chat (which is always at /vestlus).
+const PORTAL = 'https://keskkonnaportaal.ee';
+const PORTAL_PAGE = `${PORTAL}/et/teemad/mets`;
+const PORTAL_CACHE_MS = 10 * 60 * 1000;
+const PORTAL_AS_HOME = Boolean(process.env.VERCEL);
 const URL_HERE = `http://127.0.0.1:${PORT}`;
 const ON_VERCEL = Boolean(process.env.VERCEL);
 const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
@@ -410,6 +418,52 @@ async function chat(req, res) {
   res.end();
 }
 
+let portalCopy = { html: '', at: 0 };
+
+// Fetches the portal page as it is right now and adds the chat box. Nothing of the portal
+// is kept in this project: its styles, scripts and images load from the portal itself
+// (<base>), and links lead to the real portal. Three things are changed on purpose:
+// the page tells search engines to stay away, the portal's visitor statistics and reCAPTCHA
+// scripts are left out so the demo does not count as traffic there, and its feedback form
+// does not submit.
+async function portalPage(origin) {
+  if (Date.now() - portalCopy.at > PORTAL_CACHE_MS) {
+    const res = await fetch(PORTAL_PAGE, {
+      headers: { 'user-agent': 'metsachat-praktikanaidis/1.0', 'accept-language': 'et' },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new Error(`Keskkonnaportaal: HTTP ${res.status}`);
+    portalCopy = { html: await res.text(), at: Date.now() };
+  }
+  const box =
+    '<div id="metsachat" style="max-width:1140px;margin:0 auto;padding:24px;box-sizing:border-box">' +
+    `<iframe src="${origin}/vestlus?embed=1" title="Küsi metsa ja ulukite kohta" ` +
+    'style="display:block;width:100%;height:190px;border:0;border-radius:12px;background:#E8F6FE;transition:height .25s ease"></iframe></div>' +
+    // The box reports how tall it wants to be; it grows when a conversation starts.
+    `<script>addEventListener('message',function(e){if(e.origin==='${origin}'&&e.data&&e.data.metsachat)` +
+    "document.querySelector('#metsachat iframe').style.height=e.data.height+'px'});" +
+    "addEventListener('submit',function(e){if(e.target.matches('.webform-submission-form'))e.preventDefault()},true);</script>";
+  return portalCopy.html
+    .replace(/<script\b[^>]*\bsrc="[^"]*(?:google_tag|googletagmanager|google-analytics|recaptcha)[^"]*"[^>]*>\s*<\/script>/gi, '')
+    .replace(/<head([^>]*)>/i, `<head$1><base href="${PORTAL}/"><meta name="robots" content="noindex, nofollow">`)
+    .replace(/<title>([^<]*)<\/title>/i, '<title>$1 – praktika näidis</title>')
+    .replace(/<main\b[^>]*>/i, (tag) => tag + box);
+}
+
+async function sendPortalPage(req, res) {
+  const origin = `${req.headers['x-forwarded-proto'] || 'http'}://${(ON_VERCEL && req.headers['x-forwarded-host']) || req.headers.host}`;
+  try {
+    const html = await portalPage(origin);
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow' });
+    res.end(html);
+  } catch (error) {
+    // The portal cannot be reached: show the plain chat rather than an error.
+    console.error(error.message);
+    res.writeHead(302, { location: '/vestlus' });
+    res.end();
+  }
+}
+
 // Answers in the shape of Ollama's /api/tags, which is what the page reads.
 async function tags(res) {
   try {
@@ -427,10 +481,13 @@ const server = http.createServer((req, res) => {
   if (route === 'POST /api/chat') return chat(req, res);
   if (route === 'GET /api/tags') return tags(res);
   if (route === 'GET /api/status') return sendJson(res, 200, status());
-  if (route === 'GET /' || route === 'GET /naidis') {
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-    return fs.createReadStream(route === 'GET /' ? PAGE : DEMO_PAGE).pipe(res);
+  // "/?embed" is the address older copies of the bookmark button use for the chat box.
+  const wantsChat = route === 'GET /vestlus' || (route === 'GET /' && (!PORTAL_AS_HOME || /[?&]embed\b/.test(req.url)));
+  if (wantsChat || route === 'GET /naidis') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow' });
+    return fs.createReadStream(wantsChat ? PAGE : DEMO_PAGE).pipe(res);
   }
+  if (route === 'GET /' || route === 'GET /portaal') return sendPortalPage(req, res);
   sendJson(res, 404, { error: 'not_found' });
 });
 
@@ -448,5 +505,6 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`Vestlus töötab aadressil ${URL_HERE} (mudelid: ${PROVIDER})`);
   console.log(current ? `Indeksis on ${current.chunks.length} lõiku ${current.docs.length} dokumendist.` : NO_INDEX);
   console.log('Sulgemiseks vajuta Ctrl+C või pane see aken kinni.');
-  if (process.argv.includes('--open')) exec(`start "" "${URL_HERE}"`);
+  // --portaal opens the practice demo (the portal page with the chat box) instead of the plain chat.
+  if (process.argv.includes('--open')) exec(`start "" "${URL_HERE}${process.argv.includes('--portaal') ? '/portaal' : ''}"`);
 });
