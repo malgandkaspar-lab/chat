@@ -1,24 +1,29 @@
-// Serves the chat page and answers questions from the local search index (data/),
-// using the local Ollama server for both the search model and the chat model.
-// Run with `node server.js` (add --open to launch the browser).
+// Serves the chat page and answers questions from the search index.
+//
+// Locally the models run in Ollama on this machine: `node server.js` (add --open to launch
+// the browser). On Vercel, where this file is deployed as it is, they are reached through
+// Vercel AI Gateway. lib/models.js decides which.
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { exec } = require('node:child_process');
-const { embed, loadIndex, indexModifiedAt, search } = require('./lib/search');
+const { loadIndex, indexModifiedAt, search } = require('./lib/search');
+const { CLOUD, embed, streamChat, chatModels } = require('./lib/models');
 
 const PORT = Number(process.env.PORT) || 3939;
-const OLLAMA = new URL(process.env.OLLAMA_URL || 'http://127.0.0.1:11434');
 const PAGE = path.join(__dirname, 'index.html');
 const URL_HERE = `http://127.0.0.1:${PORT}`;
-const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+const ON_VERCEL = Boolean(process.env.VERCEL);
+const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 
-// How much the chat model gets to read. It manages ~64 tokens/s here, so every passage costs seconds.
+// How much the chat model gets to read. The local model manages ~64 tokens/s, so there every
+// passage costs seconds; in the cloud every passage costs money.
 const MAX_PASSAGES = 4;
-const MAX_SOURCE_CHARS = 3200; // about 1400 tokens, some 25 seconds of reading
-// Below this a passage is not about the question. Measured on this index: questions the
-// sources cover score 0.62-0.74, unrelated ones (recipes, football, programming) 0.42-0.51.
-const MIN_SCORE = 0.55;
+const MAX_SOURCE_CHARS = 3200; // about 1400 tokens
+// MIN_SCORE: below this a passage is not about the question. The value depends on the search
+// model. Measured for the local one (bge-m3): questions the sources cover score 0.62-0.80,
+// unrelated ones (recipes, football, programming) 0.42-0.51.
+const MIN_SCORE = CLOUD ? Number(process.env.CLOUD_MIN_SCORE ?? 0.35) : 0.55;
 const SCORE_WINDOW = 0.08; // passages this much worse than the best one are left out
 const SCORE_TIER = 0.04; // scores closer than this count as equally good
 // The sites keep news from many years, each stating the figures of its day. Given a 2018 and
@@ -28,9 +33,15 @@ const STALE_YEARS = 3;
 const FOLLOW_UP_CHARS = 60; // a question shorter than this is searched together with the previous one
 const HISTORY_TURNS = 2; // earlier question/answer pairs passed along for follow-up questions
 const HISTORY_CHARS = 500;
-const CHAT_OPTIONS = { num_ctx: 4096, temperature: 0.2 };
 
-const NO_INDEX = 'Otsinguindeks puudub. Käivita kaustas fail uuenda-andmeid.bat ja proovi siis uuesti.';
+// A public page can be used by anyone, and every answer costs money there.
+const MAX_QUESTION_CHARS = 600;
+const RATE_LIMIT = 12; // questions per visitor ...
+const RATE_WINDOW_MS = 10 * 60 * 1000; // ... in this time
+
+const NO_INDEX = CLOUD
+  ? 'Veebiversiooni otsinguindeks puudub. See tuleb teha käsuga: node ingest.js --cloud'
+  : 'Otsinguindeks puudub. Käivita kaustas fail uuenda-andmeid.bat ja proovi siis uuesti.';
 const NO_ANSWER =
   'Ei leidnud Keskkonnaagentuuri, Keskkonnaameti ega SMI materjalidest selle kohta infot. ' +
   'Proovi küsida täpsemalt või teise sõnastusega.';
@@ -53,9 +64,9 @@ let indexStamp = 0;
 
 // Picks up a rebuilt index (or the partial saves of a running ingest) without a restart.
 function currentIndex() {
-  const stamp = indexModifiedAt();
+  const stamp = indexModifiedAt(CLOUD);
   if (stamp !== indexStamp) {
-    const loaded = loadIndex();
+    const loaded = loadIndex(CLOUD);
     if (loaded) {
       index = loaded;
       indexStamp = stamp;
@@ -84,13 +95,36 @@ function readJson(req) {
   });
 }
 
+// Only this page may call the server. Locally that also keeps other sites open in the
+// browser away from it; on Vercel the host is whatever domain the project has.
+function allowed(req) {
+  const host = (ON_VERCEL && req.headers['x-forwarded-host']) || req.headers.host;
+  if (!ON_VERCEL && !LOCAL_HOSTS.has(host)) return false;
+  const origin = req.headers.origin;
+  return !origin || origin.replace(/^https?:\/\//, '') === host;
+}
+
+const recentQuestions = new Map(); // visitor address -> times of their recent questions
+
+function overLimit(req) {
+  if (!ON_VERCEL) return false;
+  const visitor = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress).split(',')[0].trim();
+  const now = Date.now();
+  const times = (recentQuestions.get(visitor) || []).filter((time) => now - time < RATE_WINDOW_MS);
+  if (times.length >= RATE_LIMIT) return true;
+  recentQuestions.set(visitor, [...times, now]);
+  if (recentQuestions.size > 5000) recentQuestions.clear();
+  return false;
+}
+
 function status() {
   const current = currentIndex();
-  if (!current) return { ready: false };
+  if (!current) return { ready: false, cloud: CLOUD };
   const perSource = {};
   for (const doc of current.docs) perSource[doc.source] = (perSource[doc.source] || 0) + 1;
   return {
     ready: true,
+    cloud: CLOUD,
     partial: Boolean(current.partial),
     focus: current.focus || null,
     built: current.built,
@@ -174,64 +208,77 @@ async function chat(req, res) {
   } catch {
     return sendJson(res, 400, { error: 'bad_request' });
   }
-  const messages = (body.messages || []).filter((m) => m && typeof m.content === 'string' && m.content.trim());
-  if (!messages.length || messages[messages.length - 1].role !== 'user') return sendJson(res, 400, { error: 'bad_request' });
+  const messages = (body.messages || [])
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+    .slice(-(HISTORY_TURNS * 2 + 1));
+  const question = messages[messages.length - 1];
+  if (!question || question.role !== 'user') return sendJson(res, 400, { error: 'bad_request' });
+  if (ON_VERCEL && question.content.length > MAX_QUESTION_CHARS) return sendJson(res, 413, { error: 'too_long' });
+  if (overLimit(req)) return sendJson(res, 429, { error: 'rate_limited' });
 
-  // The reply is a stream of JSON lines: first the sources, then Ollama's own chat stream.
-  const line = (data) => res.write(JSON.stringify(data) + '\n');
-  const finishWith = (content) => {
-    line({ message: { role: 'assistant', content }, done: true });
-    res.end();
-  };
+  // The page chooses among the models this server offers; anything else falls back to the default.
+  let model;
+  try {
+    const offered = await chatModels();
+    model = offered.includes(body.model) ? body.model : offered[0];
+  } catch {
+    return sendJson(res, 502, { error: 'model_unreachable' });
+  }
 
   const current = currentIndex();
   let passages;
   try {
     passages = current ? await retrieve(current, messages) : [];
-  } catch {
-    return sendJson(res, 502, { error: 'ollama_unreachable' });
+  } catch (error) {
+    console.error(error.message);
+    return sendJson(res, 502, { error: 'model_unreachable' });
   }
+
+  // The reply is a stream of JSON lines: first the sources, then the answer piece by piece.
   res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store' });
+  const line = (data) => res.write(JSON.stringify(data) + '\n');
+  const finishWith = (content) => {
+    line({ message: { role: 'assistant', content }, done: true });
+    res.end();
+  };
   line({ sources: passages.map(({ text, ...shown }) => shown) });
   if (!current) return finishWith(NO_INDEX);
   // Nothing relevant found: answer here, so the model gets no chance to improvise.
   if (!passages.length) return finishWith(current.focus ? noAnswerOnTopic(current.focus) : NO_ANSWER);
 
-  const upstream = http.request(
-    { hostname: OLLAMA.hostname, port: OLLAMA.port, path: '/api/chat', method: 'POST', headers: { 'content-type': 'application/json' } },
-    (up) => up.pipe(res),
-  );
-  upstream.on('error', () => {
-    line({ error: 'ollama_unreachable' });
-    res.end();
-  });
-  // Closing the connection is how Ollama learns it should stop generating.
-  res.on('close', () => upstream.destroy());
-  upstream.end(JSON.stringify({ model: body.model, messages: buildMessages(messages, passages), stream: true, options: CHAT_OPTIONS }));
+  // Leaving the page or pressing "Peata" stops the model as well.
+  const stop = new AbortController();
+  res.on('close', () => stop.abort());
+  try {
+    await streamChat({ model, messages: buildMessages(messages, passages), signal: stop.signal }, (part) =>
+      line({ message: { role: 'assistant', ...part } }),
+    );
+    line({ done: true });
+  } catch (error) {
+    if (!stop.signal.aborted) {
+      console.error(error.message);
+      line({ error: error instanceof TypeError ? 'model_unreachable' : error.message });
+    }
+  }
+  res.end();
 }
 
-function proxyTags(req, res) {
-  const upstream = http.request(
-    { hostname: OLLAMA.hostname, port: OLLAMA.port, path: '/api/tags', method: 'GET' },
-    (up) => {
-      res.writeHead(up.statusCode, { 'content-type': up.headers['content-type'] || 'application/json', 'cache-control': 'no-store' });
-      up.pipe(res);
-    },
-  );
-  upstream.on('error', () => sendJson(res, 502, { error: 'ollama_unreachable' }));
-  upstream.end();
+// Answers in the shape of Ollama's /api/tags, which is what the page reads.
+async function tags(res) {
+  try {
+    const names = await chatModels();
+    sendJson(res, 200, { models: names.map((name) => ({ name, capabilities: ['completion'] })) });
+  } catch {
+    sendJson(res, 502, { error: 'model_unreachable' });
+  }
 }
 
 const server = http.createServer((req, res) => {
-  // Only this page may talk to the server, not other sites open in the browser.
-  const origin = req.headers.origin;
-  if (!ALLOWED_HOSTS.has(req.headers.host) || (origin && !ALLOWED_HOSTS.has(origin.replace(/^http:\/\//, '')))) {
-    return sendJson(res, 403, { error: 'forbidden' });
-  }
+  if (!allowed(req)) return sendJson(res, 403, { error: 'forbidden' });
 
   const route = `${req.method} ${req.url.split('?')[0]}`;
   if (route === 'POST /api/chat') return chat(req, res);
-  if (route === 'GET /api/tags') return proxyTags(req, res);
+  if (route === 'GET /api/tags') return tags(res);
   if (route === 'GET /api/status') return sendJson(res, 200, status());
   if (route === 'GET /') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
@@ -251,7 +298,7 @@ server.on('error', (err) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   const current = currentIndex();
-  console.log(`Vestlus töötab aadressil ${URL_HERE}`);
+  console.log(`Vestlus töötab aadressil ${URL_HERE}${CLOUD ? ' (pilvemudelitega)' : ''}`);
   console.log(current ? `Indeksis on ${current.chunks.length} lõiku ${current.docs.length} dokumendist.` : NO_INDEX);
   console.log('Sulgemiseks vajuta Ctrl+C või pane see aken kinni.');
   if (process.argv.includes('--open')) exec(`start "" "${URL_HERE}"`);

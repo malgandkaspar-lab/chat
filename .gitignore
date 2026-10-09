@@ -2,8 +2,13 @@
 node_modules/
 
 # Allalaaditud lehtede koopiad ja failid: `node ingest.js` laeb need ise uuesti alla.
-# Valmis otsinguindeks (data/index.json ja data/vectors.bin) on repos, et vestlus
-# töötaks kohe pärast kloonimist.
+# Valmis otsinguindeksid (data/index.json, data/vectors.bin ja data/cloud/) on repos,
+# et vestlus töötaks kohe pärast kloonimist ja Vercelis.
 data/cache/
 data/files/
-data/*.tmp
+data/**/*.tmp
+
+# Kohalikud seaded ja võtmed (nt AI_GATEWAY_API_KEY). Ei tohi kunagi reposse sattuda.
+.env
+.env.*
+.vercel

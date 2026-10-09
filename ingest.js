@@ -4,13 +4,18 @@
 //   node ingest.js --limit 20  only the first 20 pages of each site (for a quick trial)
 //   node ingest.js --download-only   fetch pages and files, do not build the index
 //   node ingest.js --all       index every topic, ignoring the "focus" set in sources.json
+//   node ingest.js --cloud     build the index the Vercel deployment uses (data/cloud/),
+//                              embedding through Vercel AI Gateway instead of Ollama
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { parseHtml, parsePdf, parseXlsx, parseCsv } = require('./lib/extract');
 const { chunkText } = require('./lib/chunk');
-const { EMBED_MODEL, embed, loadIndex, saveIndex } = require('./lib/search');
+const { loadIndex, saveIndex } = require('./lib/search');
+const { CLOUD, embedModel, embed } = require('./lib/models');
+
+const EMBED_MODEL = embedModel();
 const sources = require('./sources.json');
 
 const DATA_DIR = path.join(__dirname, 'data');
@@ -18,7 +23,7 @@ const CACHE_DIR = path.join(DATA_DIR, 'cache');
 const FILES_DIR = path.join(DATA_DIR, 'files');
 const USER_AGENT = 'vestlus-indekseerija/1.0 (isiklik kasutus)';
 const DELAY_MS = 350; // pause after every request to one site
-const EMBED_BATCH = 16;
+const EMBED_BATCH = CLOUD ? 64 : 16;
 const CHECKPOINT = EMBED_BATCH * 30; // passages between progress lines and partial saves
 const MIN_TEXT = 100; // shorter pages and sections carry nothing worth quoting
 
@@ -169,7 +174,7 @@ async function fileToDoc({ source, title, url }) {
 
 async function embedMissing(index, texts) {
   // Passages whose text has not changed keep the vector they already have.
-  const previous = REFRESH ? null : loadIndex();
+  const previous = REFRESH ? null : loadIndex(CLOUD);
   const known = new Map();
   if (previous && previous.model === EMBED_MODEL) {
     previous.chunks.forEach((chunk, i) => known.set(chunk.hash, previous.vectors.subarray(i * previous.dim, (i + 1) * previous.dim)));
@@ -200,7 +205,7 @@ async function embedMissing(index, texts) {
     if (!vectors || !kept.length) return;
     const partial = new Float32Array(kept.length * index.dim);
     kept.forEach((i, n) => partial.set(vectors.subarray(i * index.dim, (i + 1) * index.dim), n * index.dim));
-    saveIndex({ ...index, partial: true, chunks: kept.map((i) => index.chunks[i]), vectors: partial });
+    saveIndex({ ...index, partial: true, chunks: kept.map((i) => index.chunks[i]), vectors: partial }, CLOUD);
   };
 
   const started = Date.now();
@@ -291,8 +296,8 @@ async function main() {
   if (!index.chunks.length) throw new Error('Ühtegi teksti ei leitud, indeksit ei tehtud.');
   if (focus) console.log(`Teema: ${focus.label} (${index.docs.length} dokumenti ${docs.length}-st). Kõige jaoks käivita: node ingest.js --all`);
   await embedMissing(index, texts);
-  saveIndex(index);
-  console.log(`Valmis: ${index.docs.length} dokumenti, ${index.chunks.length} lõiku -> data/index.json`);
+  saveIndex(index, CLOUD);
+  console.log(`Valmis: ${index.docs.length} dokumenti, ${index.chunks.length} lõiku -> data/${CLOUD ? 'cloud/' : ''}index.json (${EMBED_MODEL})`);
 }
 
 main().catch((error) => {
